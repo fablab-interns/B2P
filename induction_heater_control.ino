@@ -1,0 +1,19 @@
+int relayPin = 8;       // Pin controlling the relay
+int switchPin = 7;      // Pin connected to the switch
+int switchState = 0;    // Variable to store the switch state
+ 
+void setup() {
+  pinMode(relayPin, OUTPUT);        // Set relay pin as output
+  pinMode(switchPin, INPUT_PULLUP); // Set switch pin as input with internal pull-up resistor
+  digitalWrite(relayPin, LOW);      // Initially, the relay is off
+}
+ 
+void loop() {
+  switchState = digitalRead(switchPin); // Read the state of the switch
+  // Check if the switch is pressed (LOW because of internal pull-up)
+  if (switchState == LOW) {
+    digitalWrite(relayPin, HIGH);  // Turn on the relay (power the load)
+    delay(10000);                  // Wait for 10 seconds
+    digitalWrite(relayPin, LOW);   // Turn off the relay (cut power to load)
+  }
+}
