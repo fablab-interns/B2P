@@ -1,5 +1,5 @@
 #include <Bounce2.h>
-// provjera za git
+
 // Motor control pins
 #define IN1 7
 #define IN2 6
@@ -16,6 +16,7 @@
 #define BUTTON_TOGGLE_PIN 12  // The toggle button
 
 // Variables
+int fixedForwardSteps = 400;  // for cca 4 mm overlap
 volatile long encoderCount = 0;  // Tracks the encoder count
 const int CPR = 28;             // Counts per revolution (7 PPR * 4 quadrature steps)
 const int incrementSteps = 1 * CPR;  // Encoder counts for 4 shaft rotations
@@ -104,7 +105,23 @@ void loop() {
       Serial.println("Cannot Decrease Below Zero Rotations");
     }
   }
+// Toggle button logic: Start/stop the motor with a fixed target forward - 
+  if (toggleButton.fell()) {
+    if (!motorRunning) {
+      // When toggle is pressed, start moving the motor forward for a fixed number of encoder counts
+      targetSteps = fixedForwardSteps;  // Set target to 350 encoder counts
+      Serial.println("Toggle Button Pressed: Moving Forward for Fixed Steps");
 
+      // Execute motor movement to the target
+      executeMotorMovement();
+    } else {
+      // If the motor is already running, stop it
+      stopMotor();
+      Serial.println("Motor Stopped via Toggle");
+    }
+  }
+
+/*  Uncomment for the initial toggle button command
   // Toggle button logic: Start/stop the motor
   if (toggleButton.fell()) {
     if (motorRunning) {
@@ -117,6 +134,7 @@ void loop() {
     }
   }
 
+*/
   // Decrease backward button logic: Move motor backward while the button is pressed
   if (decreaseBackwardButton.read() == LOW) {  // If the button is pressed
     if (!motorRunning) {  // Only start the motor if it's not already running
@@ -192,5 +210,3 @@ void readEncoder() {
   lastState = stateC1;
 }
 
-
- 
