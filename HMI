@@ -217,7 +217,7 @@ void executeMotorMovement() {
     motorRunning = true;
 
     while (encoderCount < targetSteps) {
-        delay(10);
+        delay(1);
     }
     stopMotor();
 }
