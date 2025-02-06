@@ -1,13 +1,17 @@
 #include <Arduino.h>
 #include <Bounce2.h>
 
-// Motor control pins for ESP32
-#define IN1 16  // Adjust according to ESP32 pin layout
+#ifdef ARDUINO_ARCH_ESP32
+#define ESP32
+#endif
+
+// Motor control pins
+#define IN1 16  
 #define IN2 17
-#define ENA 5   // ESP32 supports PWM on many pins
+#define ENA 5  
 
 // Encoder pins
-#define ENCODER_C1 34  // Must be GPIO34-39 for input-only pins on ESP32
+#define ENCODER_C1 34  
 #define ENCODER_C2 35
 
 // Button pins
@@ -19,7 +23,7 @@
 // PWM settings for ESP32
 #define PWM_CHANNEL 0
 #define PWM_FREQUENCY 5000
-#define PWM_RESOLUTION 8  // 8-bit resolution (0-255)
+#define PWM_RESOLUTION 8  
 
 // Variables
 int fixedForwardSteps = 380;  
@@ -37,13 +41,15 @@ Bounce decrementButton = Bounce();
 Bounce toggleButton = Bounce();
 
 void setup() {
+  Serial.begin(115200);
+  
   // Motor control pins
   pinMode(IN1, OUTPUT);
   pinMode(IN2, OUTPUT);
   pinMode(ENA, OUTPUT);
 
   // Initialize PWM on ESP32
-  ledcSetup(PWM_CHANNEL, PWM_FREQUENCY, PWM_RESOLUTION);
+  ledcSetup(PWM_CHANNEL, PWM_FREQUENCY, PWM_RESOLUTION);  
   ledcAttachPin(ENA, PWM_CHANNEL);
 
   // Encoder pins
@@ -76,9 +82,6 @@ void setup() {
 
   // Attach encoder interrupt
   attachInterrupt(digitalPinToInterrupt(ENCODER_C1), readEncoder, CHANGE);
-
-  // Start serial communication
-  Serial.begin(115200);
 }
 
 void loop() {
@@ -182,4 +185,3 @@ void readEncoder() {
   }
   lastState = stateC1;
 }
-
