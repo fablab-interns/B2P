@@ -1,151 +1,183 @@
-#include <WiFi.h>
-#include <WebServer.h>
 #include <Bounce2.h>
 
-// Function Prototype for ISR
-void IRAM_ATTR readEncoder();
-
-// Wi-Fi Credentials
-const char* ssid = "FabLab UNIFY_2G";
-const char* password = "Sarajevo2022#!";
-
-// Web Server Setup
-WebServer server(80);
-
-// Motor control pins
-#define IN1 19
-#define IN2 18
-#define ENA 5
+// Motor control pins for ESP32
+#define IN1 16  // Adjust according to your ESP32 pin layout
+#define IN2 17
+#define ENA 5   // ESP32 supports PWM on many pins
 
 // Encoder pins
-#define ENCODER_C1 35
-#define ENCODER_C2 34
+#define ENCODER_C1 34  // Must be GPIO34-39 for input-only pins on ESP32
+#define ENCODER_C2 35
 
 // Button pins
-#define BUTTON_DECREASE_BACKWARD_PIN 32  
-#define BUTTON_DECREMENT_PIN 33
-#define BUTTON_INCREMENT_PIN 25
-#define BUTTON_TOGGLE_PIN 26  
+#define BUTTON_DECREASE_BACKWARD_PIN 4
+#define BUTTON_DECREMENT_PIN 18
+#define BUTTON_INCREMENT_PIN 19
+#define BUTTON_TOGGLE_PIN 21
+
+// PWM settings for ESP32
+#define PWM_CHANNEL 0
+#define PWM_FREQUENCY 5000
+#define PWM_RESOLUTION 8  // 8-bit resolution (0-255)
 
 // Variables
 int fixedForwardSteps = 380;  
 volatile long encoderCount = 0;
-const int CPR = 28;
-int motorSpeed = 150;  
+const int CPR = 28;             
+const int incrementSteps = 1 * CPR;
+const int motorSpeed = 150;
 bool motorRunning = false;
 long targetSteps = 0;
-int lastAction = 0;
-unsigned long lastTime = 0;
-float rpm = 0;
 
-// Button Instances
+// Button instances
 Bounce decreaseBackwardButton = Bounce();
 Bounce incrementButton = Bounce();
 Bounce decrementButton = Bounce();
 Bounce toggleButton = Bounce();
 
 void setup() {
-    Serial.begin(115200);
-    
-    // Motor Test
-    Serial.println("Testing motor...");
-    digitalWrite(IN1, HIGH);
-    digitalWrite(IN2, LOW);
-    analogWrite(ENA, 200);  // Set motor speed to medium
-    delay(3000);            // Run motor for 3 seconds
-    analogWrite(ENA, 0);
-    digitalWrite(IN1, LOW);
-    digitalWrite(IN2, LOW);    // Stop motor
-    Serial.println("Motor test complete!");
+  // Motor control pins
+  pinMode(IN1, OUTPUT);
+  pinMode(IN2, OUTPUT);
+  pinMode(ENA, OUTPUT);
 
-    Serial.begin(115200);
-    pinMode(IN1, OUTPUT);
-    pinMode(IN2, OUTPUT);
-    pinMode(ENA, OUTPUT);
-    pinMode(ENCODER_C1, INPUT);
-    pinMode(ENCODER_C2, INPUT);
-    pinMode(BUTTON_DECREASE_BACKWARD_PIN, INPUT_PULLUP);
-    pinMode(BUTTON_INCREMENT_PIN, INPUT_PULLUP);
-    pinMode(BUTTON_DECREMENT_PIN, INPUT_PULLUP);
-    pinMode(BUTTON_TOGGLE_PIN, INPUT_PULLUP);
-    
-    decreaseBackwardButton.attach(BUTTON_DECREASE_BACKWARD_PIN);
-    incrementButton.attach(BUTTON_INCREMENT_PIN);
-    decrementButton.attach(BUTTON_DECREMENT_PIN);
-    toggleButton.attach(BUTTON_TOGGLE_PIN);
-    decreaseBackwardButton.interval(50);
-    incrementButton.interval(50);
-    decrementButton.interval(50);
-    toggleButton.interval(50);
-    
-    analogWrite(ENA, 0);
-    digitalWrite(IN1, LOW);
-    digitalWrite(IN2, LOW);
-    attachInterrupt(digitalPinToInterrupt(ENCODER_C1), readEncoder, CHANGE);
-    
-    WiFi.mode(WIFI_STA);
-    WiFi.begin(ssid, password);
-    while (WiFi.status() != WL_CONNECTED) {
-        delay(500);
-        Serial.print(".");
-    }
-    Serial.println("\nConnected! IP Address: " + WiFi.localIP().toString());
-    server.on("/", handleWebpage);
-    server.on("/speed", handleSpeed);
-    server.on("/encoder", handleEncoder);
-    server.begin();
+  // Initialize PWM on ESP32
+  ledcSetup(PWM_CHANNEL, PWM_FREQUENCY, PWM_RESOLUTION);
+  ledcAttachPin(ENA, PWM_CHANNEL);
+
+  // Encoder pins
+  pinMode(ENCODER_C1, INPUT);
+  pinMode(ENCODER_C2, INPUT);
+
+  // Button pins
+  pinMode(BUTTON_DECREASE_BACKWARD_PIN, INPUT_PULLUP);
+  pinMode(BUTTON_INCREMENT_PIN, INPUT_PULLUP);
+  pinMode(BUTTON_DECREMENT_PIN, INPUT_PULLUP);
+  pinMode(BUTTON_TOGGLE_PIN, INPUT_PULLUP);
+
+  // Initialize the Bounce objects
+  decreaseBackwardButton.attach(BUTTON_DECREASE_BACKWARD_PIN);
+  decreaseBackwardButton.interval(50);
+
+  incrementButton.attach(BUTTON_INCREMENT_PIN);
+  incrementButton.interval(50);
+
+  decrementButton.attach(BUTTON_DECREMENT_PIN);
+  decrementButton.interval(50);
+
+  toggleButton.attach(BUTTON_TOGGLE_PIN);
+  toggleButton.interval(50);
+
+  // Initially ensure motor is stopped
+  ledcWrite(PWM_CHANNEL, 0);
+  digitalWrite(IN1, LOW);
+  digitalWrite(IN2, LOW);
+
+  // Attach encoder interrupt
+  attachInterrupt(digitalPinToInterrupt(ENCODER_C1), readEncoder, CHANGE);
+
+  // Start serial communication
+  Serial.begin(115200);
 }
 
 void loop() {
-    server.handleClient();
-    decreaseBackwardButton.update();
-    incrementButton.update();
-    decrementButton.update();
-    toggleButton.update();
-    calculateRPM();
-}
+  decreaseBackwardButton.update();
+  incrementButton.update();
+  decrementButton.update();
+  toggleButton.update();
 
-void handleWebpage() {
-    String html = "<html><head><title>Motor HMI</title><meta name='viewport' content='width=device-width, initial-scale=1'>";
-    html += "<style>body{text-align:center; font-family:Arial;} button{font-size:20px; padding:15px; margin:10px;} input{font-size:20px;} .container{margin:20px;}</style></head>";
-    html += "<body><h1>Motor Control Panel</h1>";
-    html += "<div class='container'><p>Encoder Count: <span id='encoder'>0</span></p>";
-    html += "<p>RPM: <span id='rpm'>0</span></p></div>";
-    html += "<div class='container'><button onclick=\"sendRequest('/increment')\">Increment</button>";
-    html += "<button onclick=\"sendRequest('/decrement')\">Decrement</button>";
-    html += "<button onclick=\"sendRequest('/toggle')\">Repeat Last Motion</button>";
-    html += "<button onclick=\"sendRequest('/stop')\">Stop</button></div>";
-    html += "<div class='container'>Speed: <input type='range' min='50' max='255' value='150' onchange=\"sendRequest('/speed?value='+this.value)\">";
-    html += "<input type='number' min='50' max='255' id='speedInput'><button onclick=\"setSpeed()\">Set Speed</button></div>";
-    html += "<script>function sendRequest(route){ fetch(route); }";
-    html += "function updateData(){ fetch('/encoder').then(res => res.text()).then(data => document.getElementById('encoder').innerText = data);";
-    html += "fetch('/rpm').then(res => res.text()).then(data => document.getElementById('rpm').innerText = data); }";
-    html += "function setSpeed(){ let val = document.getElementById('speedInput').value; if(val){ sendRequest('/speed?value='+val); }}";
-    html += "setInterval(updateData, 500);</script></body></html>";
-    server.send(200, "text/html", html);
-}
+  if (incrementButton.fell() && !motorRunning) {
+    Serial.println("Increment Button Pressed");
+    targetSteps += incrementSteps;
+    Serial.println("Steps: " + String(targetSteps));
+    executeMotorMovement();
+  }
 
-void handleSpeed() {
-    if (server.hasArg("value")) {
-        motorSpeed = server.arg("value").toInt();
-        analogWrite(ENA, motorSpeed);
+  if (decrementButton.fell() && !motorRunning) {
+    Serial.println("Decrement Button Pressed");
+    if (targetSteps >= incrementSteps) {
+      targetSteps -= incrementSteps;
+      if (targetSteps > 0) {
+        executeMotorMovement();
+      } else {
+        Serial.println("No Rotations Set (Target = 0)");
+      }
+    } else {
+      Serial.println("Cannot Decrease Below Zero Rotations");
     }
-    server.send(200, "text/plain", "Speed Updated");
-}
+  }
 
-void handleEncoder() {
-    server.send(200, "text/plain", String(encoderCount));
-}
-
-void calculateRPM() {
-    unsigned long currentTime = millis();
-    if (currentTime - lastTime >= 1000) {
-        rpm = (encoderCount / CPR) * 60.0;
-        encoderCount = 0;
-        lastTime = currentTime;
+  if (toggleButton.fell()) {
+    if (!motorRunning) {
+      targetSteps = fixedForwardSteps;
+      Serial.println("Toggle Button Pressed: Moving Forward for Fixed Steps");
+      executeMotorMovement();
+    } else {
+      stopMotor();
+      Serial.println("Motor Stopped via Toggle");
     }
+  }
+
+  if (decreaseBackwardButton.read() == LOW) {
+    if (!motorRunning) {
+      Serial.println("Decrease Backward Button Pressed - Moving Motor Backward");
+      moveBackwardsContinuous();
+    }
+  } else {
+    if (motorRunning) {
+      stopMotor();
+      Serial.println("Motor Stopped after Button Released");
+    }
+  }
 }
 
-void IRAM_ATTR readEncoder() {
-    encoderCount++;
+void executeMotorMovement() {
+  encoderCount = 0;
+  digitalWrite(IN1, LOW);
+  digitalWrite(IN2, HIGH);
+  ledcWrite(PWM_CHANNEL, motorSpeed);
+  motorRunning = true;
+
+  while (encoderCount < targetSteps) {
+    Serial.print("Encoder Count: ");
+    Serial.println(encoderCount);
+    delay(10);
+  }
+
+  stopMotor();
+  Serial.println("Motor Stopped after Target Rotations");
+}
+
+void moveBackwardsContinuous() {
+  digitalWrite(IN1, HIGH);
+  digitalWrite(IN2, LOW);
+  ledcWrite(PWM_CHANNEL, motorSpeed);
+  motorRunning = true;
+  Serial.print("Reversing - Encoder Count: ");
+  Serial.println(encoderCount);
+  delay(10);
+}
+
+void stopMotor() {
+  ledcWrite(PWM_CHANNEL, 0);
+  digitalWrite(IN1, LOW);
+  digitalWrite(IN2, LOW);
+  motorRunning = false;
+}
+
+void readEncoder() {
+  static int lastState = LOW;
+  int stateC1 = digitalRead(ENCODER_C1);
+  int stateC2 = digitalRead(ENCODER_C2);
+
+  if (stateC1 != lastState) {
+    if (stateC1 == stateC2) {
+      encoderCount++;
+    } else {
+      encoderCount--;
+    }
+    Serial.print("Interrupt: Encoder Count = ");
+    Serial.println(encoderCount);
+  }
+  lastState = stateC1;
 }
