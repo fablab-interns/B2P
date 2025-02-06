@@ -136,5 +136,50 @@ void executeMotorMovement() {
   encoderCount = 0;
   digitalWrite(IN1, LOW);
   digitalWrite(IN2, HIGH);
-  ledcWrite(PWM_CHANNEL
+  ledcWrite(PWM_CHANNEL, motorSpeed);
+  motorRunning = true;
+
+  while (encoderCount < targetSteps) {
+    Serial.print("Encoder Count: ");
+    Serial.println(encoderCount);
+    delay(10);
+  }
+
+  stopMotor();
+  Serial.println("Motor Stopped after Target Rotations");
+}
+
+void moveBackwardsContinuous() {
+  digitalWrite(IN1, HIGH);
+  digitalWrite(IN2, LOW);
+  ledcWrite(PWM_CHANNEL, motorSpeed);
+  motorRunning = true;
+  Serial.print("Reversing - Encoder Count: ");
+  Serial.println(encoderCount);
+  delay(10);
+}
+
+void stopMotor() {
+  ledcWrite(PWM_CHANNEL, 0);
+  digitalWrite(IN1, LOW);
+  digitalWrite(IN2, LOW);
+  motorRunning = false;
+}
+
+void readEncoder() {
+  static int lastState = LOW;
+  int stateC1 = digitalRead(ENCODER_C1);
+  int stateC2 = digitalRead(ENCODER_C2);
+
+  if (stateC1 != lastState) {
+    if (stateC1 == stateC2) {
+      encoderCount++;
+    } else {
+      encoderCount--;
+    }
+    Serial.print("Interrupt: Encoder Count = ");
+    Serial.println(encoderCount);
+  }
+  lastState = stateC1;
+}
 
