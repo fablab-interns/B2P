@@ -2,6 +2,9 @@
 #include <WebServer.h>
 #include <Bounce2.h>
 
+// Function Prototype for ISR
+void IRAM_ATTR readEncoder();  // ✅ Fix for "not declared in scope" error
+
 // Wi-Fi Credentials
 const char* ssid = "FabLab UNIFY_2G";
 const char* password = "Sarajevo2022#!";
