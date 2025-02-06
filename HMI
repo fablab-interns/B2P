@@ -9,20 +9,20 @@ const char* password = "Sarajevo2022#!";
 // Web Server Setup
 WebServer server(80);
 
-// Motor control pins
-#define IN1 7
-#define IN2 6
-#define ENA 9
+// Motor control pins (Changed to valid ESP32 GPIOs)
+#define IN1 19
+#define IN2 18
+#define ENA 5  // PWM Speed control
 
-// Encoder pins
-#define ENCODER_C1 2
-#define ENCODER_C2 3
+// Encoder pins (ESP32 safe pins)
+#define ENCODER_C1 35  // Input-only pin
+#define ENCODER_C2 34  // Input-only pin
 
-// Button pins
-#define BUTTON_DECREASE_BACKWARD_PIN 4  
-#define BUTTON_DECREMENT_PIN 10
-#define BUTTON_INCREMENT_PIN 11
-#define BUTTON_TOGGLE_PIN 12  
+// Button pins (Changed to ESP32 safe pins)
+#define BUTTON_DECREASE_BACKWARD_PIN 32  
+#define BUTTON_DECREMENT_PIN 33
+#define BUTTON_INCREMENT_PIN 25
+#define BUTTON_TOGGLE_PIN 26  
 
 // Variables
 int fixedForwardSteps = 380;  
@@ -73,7 +73,7 @@ void setup() {
     digitalWrite(IN1, LOW);
     digitalWrite(IN2, LOW);
 
-    // Attach Encoder Interrupt
+    // Attach Encoder Interrupt (Use IRAM_ATTR to prevent crashes)
     attachInterrupt(digitalPinToInterrupt(ENCODER_C1), readEncoder, CHANGE);
 
     // WiFi Setup
@@ -81,12 +81,20 @@ void setup() {
     WiFi.begin(ssid, password);
     Serial.print("Connecting to WiFi...");
     
-    while (WiFi.status() != WL_CONNECTED) {  
+    int retries = 0;
+    while (WiFi.status() != WL_CONNECTED && retries < 20) {  
         delay(500);
         Serial.print(".");
+        retries++;
     }
     
-    Serial.println("\nConnected! IP Address: " + WiFi.localIP().toString());
+    if (WiFi.status() == WL_CONNECTED) {
+        Serial.println("\nConnected! IP Address: " + WiFi.localIP().toString());
+        server.begin();
+    } else {
+        Serial.println("\nFailed to connect. Restarting ESP32...");
+        ESP.restart();
+    }
 
     // Web Routes
     server.on("/", handleWebpage);
@@ -97,8 +105,6 @@ void setup() {
     server.on("/speed", handleSpeed);
     server.on("/encoder", handleEncoder);
     server.onNotFound([]() { server.send(404, "text/plain", "Not Found"); });
-
-    server.begin();
 }
 
 void loop() {
@@ -205,7 +211,12 @@ void handleSpeed() {
 }
 
 void handleEncoder() {
-    server.send(200, "text/plain", String(encoderCount));
+    long safeEncoderCount;
+    noInterrupts();
+    safeEncoderCount = encoderCount;
+    interrupts();
+
+    server.send(200, "text/plain", String(safeEncoderCount));
 }
 
 // **Motor Execution Functions**
@@ -238,17 +249,6 @@ void stopMotor() {
 }
 
 // **Encoder Interrupt**
-void readEncoder() {
-    static int lastState = LOW;
-    int stateC1 = digitalRead(ENCODER_C1);
-    int stateC2 = digitalRead(ENCODER_C2);
-
-    if (stateC1 != lastState) {
-        if (stateC1 == stateC2) {
-            encoderCount++;
-        } else {
-            encoderCount--;
-        }
-    }
-    lastState = stateC1;
+void IRAM_ATTR readEncoder() {
+    encoderCount++;
 }
