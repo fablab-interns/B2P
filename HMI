@@ -51,6 +51,9 @@ void setup() {
         Serial.println("\nConnected to WiFi!");
         Serial.print("IP Address: ");
         Serial.println(WiFi.localIP());
+
+        server.begin(); // start web server
+
     } else {
         Serial.println("\nFailed to connect. Restarting ESP32...");
         ESP.restart();
