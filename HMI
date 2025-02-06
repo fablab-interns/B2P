@@ -176,3 +176,55 @@ void setup() {
 
 void loop() {}
 
+
+
+#include <WiFi.h>
+
+const char* ssid = "FabLab Unify";
+const char* password = "Sarajevo2022#!";
+
+void setup() {
+    Serial.begin(115200);
+    WiFi.mode(WIFI_STA);  // Force Station mode
+    WiFi.begin(ssid, password);
+
+    Serial.print("Connecting to WiFi...");
+    int retries = 0;
+
+    while (WiFi.status() != WL_CONNECTED && retries < 20) {
+        delay(500);
+        Serial.print(".");
+        retries++;
+    }
+
+    if (WiFi.status() == WL_CONNECTED) {
+        Serial.println("\nConnected to WiFi!");
+        Serial.print("IP Address: ");
+        Serial.println(WiFi.localIP());
+    } else {
+        Serial.println("\nFailed to connect to WiFi.");
+        printWiFiStatus();
+    }
+}
+
+void loop() {}
+
+void printWiFiStatus() {
+    wl_status_t status = WiFi.status();
+    Serial.print("WiFi Status Code: ");
+    Serial.println(status);
+
+    switch (status) {
+        case WL_NO_SSID_AVAIL:
+            Serial.println("SSID not found. Check if the network is available.");
+            break;
+        case WL_CONNECT_FAILED:
+            Serial.println("Failed to connect. Incorrect password?");
+            break;
+        case WL_DISCONNECTED:
+            Serial.println("WiFi disconnected. Check signal strength or router settings.");
+            break;
+        default:
+            Serial.println("Unknown issue. Try restarting ESP32.");
+    }
+}
