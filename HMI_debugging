@@ -1,187 +1,79 @@
-#include <Arduino.h>
-#include <Bounce2.h>
+// Motor A
+int motor1Pin1 = 27;
+int motor1Pin2 = 26;
+int enable1Pin = 14;
 
-#ifdef ARDUINO_ARCH_ESP32
-#define ESP32
-#endif
+// Button Pins
+int incrementButton = 32;
+int decrementButton = 33;
+int toggleButton = 34;
+int oppositeButton = 35;
 
-// Motor control pins
-#define IN1 16  
-#define IN2 17
-#define ENA 5  
+// PWM properties
+const int freq = 30000;
+const int pwmChannel = 0;
+const int resolution = 8;
+int dutyCycle = 200;
 
-// Encoder pins
-#define ENCODER_C1 34  
-#define ENCODER_C2 35
-
-// Button pins
-#define BUTTON_DECREASE_BACKWARD_PIN 4
-#define BUTTON_DECREMENT_PIN 18
-#define BUTTON_INCREMENT_PIN 19
-#define BUTTON_TOGGLE_PIN 21
-
-// PWM settings for ESP32
-#define PWM_CHANNEL 0
-#define PWM_FREQUENCY 5000
-#define PWM_RESOLUTION 8  
-
-// Variables
-int fixedForwardSteps = 380;  
-volatile long encoderCount = 0;
-const int CPR = 28;             
-const int incrementSteps = 1 * CPR;
-const int motorSpeed = 150;
-bool motorRunning = false;
-long targetSteps = 0;
-
-// Button instances
-Bounce decreaseBackwardButton = Bounce();
-Bounce incrementButton = Bounce();
-Bounce decrementButton = Bounce();
-Bounce toggleButton = Bounce();
+// Variables to store last movement
+int lastDirection = 1; // 1 for forward, -1 for backward
+int lastSpeed = 200;
 
 void setup() {
-  Serial.begin(115200);
-  
-  // Motor control pins
-  pinMode(IN1, OUTPUT);
-  pinMode(IN2, OUTPUT);
-  pinMode(ENA, OUTPUT);
-
-  // Initialize PWM on ESP32
-  ledcSetup(PWM_CHANNEL, PWM_FREQUENCY, PWM_RESOLUTION);  
-  ledcAttachPin(ENA, PWM_CHANNEL);
-
-  // Encoder pins
-  pinMode(ENCODER_C1, INPUT);
-  pinMode(ENCODER_C2, INPUT);
-
-  // Button pins
-  pinMode(BUTTON_DECREASE_BACKWARD_PIN, INPUT_PULLUP);
-  pinMode(BUTTON_INCREMENT_PIN, INPUT_PULLUP);
-  pinMode(BUTTON_DECREMENT_PIN, INPUT_PULLUP);
-  pinMode(BUTTON_TOGGLE_PIN, INPUT_PULLUP);
-
-  // Initialize the Bounce objects
-  decreaseBackwardButton.attach(BUTTON_DECREASE_BACKWARD_PIN);
-  decreaseBackwardButton.interval(50);
-
-  incrementButton.attach(BUTTON_INCREMENT_PIN);
-  incrementButton.interval(50);
-
-  decrementButton.attach(BUTTON_DECREMENT_PIN);
-  decrementButton.interval(50);
-
-  toggleButton.attach(BUTTON_TOGGLE_PIN);
-  toggleButton.interval(50);
-
-  // Ensure motor is stopped initially
-  ledcWrite(PWM_CHANNEL, 0);
-  digitalWrite(IN1, LOW);
-  digitalWrite(IN2, LOW);
-
-  // Attach encoder interrupt
-  attachInterrupt(digitalPinToInterrupt(ENCODER_C1), readEncoder, CHANGE);
+    pinMode(motor1Pin1, OUTPUT);
+    pinMode(motor1Pin2, OUTPUT);
+    pinMode(enable1Pin, OUTPUT);
+    pinMode(incrementButton, INPUT_PULLDOWN);
+    pinMode(decrementButton, INPUT_PULLDOWN);
+    pinMode(toggleButton, INPUT_PULLDOWN);
+    pinMode(oppositeButton, INPUT_PULLDOWN);
+    
+    ledcSetup(pwmChannel, freq, resolution);
+    ledcAttachPin(enable1Pin, pwmChannel);
+    
+    Serial.begin(115200);
 }
 
 void loop() {
-  decreaseBackwardButton.update();
-  incrementButton.update();
-  decrementButton.update();
-  toggleButton.update();
+    if (digitalRead(incrementButton) == HIGH) {
+        dutyCycle = min(dutyCycle + 10, 255);
+        Serial.print("Increasing speed: ");
+        Serial.println(dutyCycle);
+        moveMotor(lastDirection, dutyCycle);
+        lastSpeed = dutyCycle;
+        delay(300);
+    }
+    
+    if (digitalRead(decrementButton) == HIGH) {
+        dutyCycle = max(dutyCycle - 10, 0);
+        Serial.print("Decreasing speed: ");
+        Serial.println(dutyCycle);
+        moveMotor(lastDirection, dutyCycle);
+        lastSpeed = dutyCycle;
+        delay(300);
+    }
+    
+    if (digitalRead(toggleButton) == HIGH) {
+        Serial.println("Repeating last movement");
+        moveMotor(lastDirection, lastSpeed);
+        delay(300);
+    }
+    
+    if (digitalRead(oppositeButton) == HIGH) {
+        lastDirection *= -1;
+        Serial.println("Changing direction");
+        moveMotor(lastDirection, dutyCycle);
+        delay(300);
+    }
+}
 
-  if (incrementButton.fell() && !motorRunning) {
-    Serial.println("Increment Button Pressed");
-    targetSteps += incrementSteps;
-    Serial.println("Steps: " + String(targetSteps));
-    executeMotorMovement();
-  }
-
-  if (decrementButton.fell() && !motorRunning) {
-    Serial.println("Decrement Button Pressed");
-    if (targetSteps >= incrementSteps) {
-      targetSteps -= incrementSteps;
-      if (targetSteps > 0) {
-        executeMotorMovement();
-      } else {
-        Serial.println("No Rotations Set (Target = 0)");
-      }
+void moveMotor(int direction, int speed) {
+    if (direction == 1) {
+        digitalWrite(motor1Pin1, LOW);
+        digitalWrite(motor1Pin2, HIGH);
     } else {
-      Serial.println("Cannot Decrease Below Zero Rotations");
+        digitalWrite(motor1Pin1, HIGH);
+        digitalWrite(motor1Pin2, LOW);
     }
-  }
-
-  if (toggleButton.fell()) {
-    if (!motorRunning) {
-      targetSteps = fixedForwardSteps;
-      Serial.println("Toggle Button Pressed: Moving Forward for Fixed Steps");
-      executeMotorMovement();
-    } else {
-      stopMotor();
-      Serial.println("Motor Stopped via Toggle");
-    }
-  }
-
-  if (decreaseBackwardButton.read() == LOW) {
-    if (!motorRunning) {
-      Serial.println("Decrease Backward Button Pressed - Moving Motor Backward");
-      moveBackwardsContinuous();
-    }
-  } else {
-    if (motorRunning) {
-      stopMotor();
-      Serial.println("Motor Stopped after Button Released");
-    }
-  }
-}
-
-void executeMotorMovement() {
-  encoderCount = 0;
-  digitalWrite(IN1, LOW);
-  digitalWrite(IN2, HIGH);
-  ledcWrite(PWM_CHANNEL, motorSpeed);
-  motorRunning = true;
-
-  while (encoderCount < targetSteps) {
-    Serial.print("Encoder Count: ");
-    Serial.println(encoderCount);
-    delay(10);
-  }
-
-  stopMotor();
-  Serial.println("Motor Stopped after Target Rotations");
-}
-
-void moveBackwardsContinuous() {
-  digitalWrite(IN1, HIGH);
-  digitalWrite(IN2, LOW);
-  ledcWrite(PWM_CHANNEL, motorSpeed);
-  motorRunning = true;
-  Serial.print("Reversing - Encoder Count: ");
-  Serial.println(encoderCount);
-  delay(10);
-}
-
-void stopMotor() {
-  ledcWrite(PWM_CHANNEL, 0);
-  digitalWrite(IN1, LOW);
-  digitalWrite(IN2, LOW);
-  motorRunning = false;
-}
-
-void readEncoder() {
-  static int lastState = LOW;
-  int stateC1 = digitalRead(ENCODER_C1);
-  int stateC2 = digitalRead(ENCODER_C2);
-
-  if (stateC1 != lastState) {
-    if (stateC1 == stateC2) {
-      encoderCount++;
-    } else {
-      encoderCount--;
-    }
-    Serial.print("Interrupt: Encoder Count = ");
-    Serial.println(encoderCount);
-  }
-  lastState = stateC1;
+    ledcWrite(pwmChannel, speed);
 }
