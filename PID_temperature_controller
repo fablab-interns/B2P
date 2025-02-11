@@ -127,7 +127,7 @@ float readTemperature() {
     }
 }
 
-// PID Calculation (with hysteresis & integral reset)
+// PID Calculation (with hysteresis & faster reheat)
 float calculatePID(float temperature) {
     long current_time = millis();
     float deltaT = (current_time - prev_time) / 1000.0;
@@ -136,9 +136,14 @@ float calculatePID(float temperature) {
 
     float error = set_temperature - temperature;
 
-    // 🔥 Ensure the heater stops heating when reaching 202°C
-    if (temperature >= set_temperature + 2) {
-        return 0; // Stop heating
+    // 🔥 FIX: Reduce Hysteresis Buffer
+    if (temperature >= set_temperature + 1) {  // Stop heating at 201°C
+        return 0; 
+    }
+
+    // 🔥 FIX: Start heating faster when cooling is done
+    if (temperature < set_temperature - 3) {  // Heat up FASTER if too cold
+        return 180;  
     }
 
     // 🔥 Fix Integral Windup (reset integral when near setpoint)
@@ -180,11 +185,10 @@ void loop() {
         analogWrite(HEATER_PWM_PIN, heaterPower);
     }
 
-    // 📈 Send data to Serial Plotter
-    Serial.print("Temperature: ");
+    // 📈 FIXED Serial Plotter Output (Temperature, PWM)
     Serial.print(temperature);
-    Serial.print("\tPWM Output: ");
+    Serial.print(",");
     Serial.println(heaterPower);
 
-    delay(500); // Reduce delay for smoother plot
+    delay(500); // Faster update for smoother plot
 }
