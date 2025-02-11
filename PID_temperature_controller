@@ -127,7 +127,7 @@ float readTemperature() {
     }
 }
 
-// PID Calculation (with hysteresis fix)
+// PID Calculation (with hysteresis & integral reset)
 float calculatePID(float temperature) {
     long current_time = millis();
     float deltaT = (current_time - prev_time) / 1000.0;
@@ -136,11 +136,14 @@ float calculatePID(float temperature) {
 
     float error = set_temperature - temperature;
 
-    // Hysteresis Fix: Avoids overshoot & heating delays
-    if (temperature < set_temperature - 2) { // Start heating at 198°C
-        error = set_temperature - temperature;
-    } else if (temperature > set_temperature + 2) { // Stop heating at 202°C
-        error = 0;
+    // 🔥 Ensure the heater stops heating when reaching 202°C
+    if (temperature >= set_temperature + 2) {
+        return 0; // Stop heating
+    }
+
+    // 🔥 Fix Integral Windup (reset integral when near setpoint)
+    if (abs(error) < 2) {
+        integral = 0;
     }
 
     // Apply Fuzzy Logic to Adjust kp
@@ -172,10 +175,15 @@ void loop() {
     Serial.println(temperature);
 
     float heaterPower = calculatePID(temperature);
-    analogWrite(HEATER_PWM_PIN, heaterPower);
+
+    // 🔥 Ensure the heater turns OFF when needed
+    if (heaterPower <= 5) {
+        analogWrite(HEATER_PWM_PIN, 0); // Fully turn off heater
+    } else {
+        analogWrite(HEATER_PWM_PIN, heaterPower);
+    }
 
     Serial.print("PWM Output: ");
     Serial.println(heaterPower);
     delay(1000);
 }
-
