@@ -17,7 +17,7 @@ MAX6675 thermocouple(MAX6675_SCK, MAX6675_CS, MAX6675_SO);
 
 // PID Gains
 float set_temperature = 200.0;
-float kp = 9.65, ki = 1.2, kd = 2.65;  // Increased ki for faster heating
+float kp = 9.65, ki = 1.0, kd = 3.0;  // Increased kd to reduce oscillations
 float e_prev = 0, integral = 0;
 long prev_time = 0;
 
@@ -38,7 +38,7 @@ float readTemperature() {
     }
 }
 
-// PID Calculation (FULL CONTROL, NO FIXED VALUES)
+// PID Calculation (Fully Dynamic, No Fixed Values)
 float calculatePID(float temperature) {
     long current_time = millis();
     float deltaT = (current_time - prev_time) / 1000.0;
@@ -47,15 +47,14 @@ float calculatePID(float temperature) {
 
     float error = set_temperature - temperature;
 
-    // 🔥 Full PID Control, No Fixed Values
-    if (abs(error) < 2) {
-        integral = 0;  // Reset integral windup when near setpoint
+    // 🔥 Improved Integral Reset (Less Aggressive)
+    if (abs(error) < 0.5) {
+        integral = 0;  
     }
 
-    // Apply Fuzzy Logic to Adjust kp
-    fuzzy.setInput(1, error);
-    fuzzy.fuzzify();
-    kp = fuzzy.defuzzify(1);
+    // 🔥 Smooth Fuzzy kp Adjustment (Prevents Sudden Jumps)
+    float new_kp = fuzzy.defuzzify(1);
+    kp = 0.9 * kp + 0.1 * new_kp;
 
     // PID Calculation
     float P = kp * error;
@@ -79,13 +78,11 @@ void loop() {
     float temperature = readTemperature();
     float heaterPower = calculatePID(temperature);
 
-    // 🔥 Full PID Control: Let it decide when to turn on/off
     analogWrite(HEATER_PWM_PIN, heaterPower);
 
-    // 📈 FIXED Serial Plotter Output (Temperature, PWM)
     Serial.print(temperature);
     Serial.print(",");
     Serial.println(heaterPower);
 
-    delay(500); // Faster update for smoother plot
+    delay(250);  // Faster updates
 }
