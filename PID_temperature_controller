@@ -106,7 +106,7 @@ MAX6675 thermocouple(MAX6675_SCK, MAX6675_CS, MAX6675_SO);
 
 // PID Gains
 float set_temperature = 200.0;
-float kp = 9.65, ki = 1.0, kd = 2.65;
+float kp = 9.65, ki = 1.2, kd = 2.65;  // Increased ki for faster heating
 float e_prev = 0, integral = 0;
 long prev_time = 0;
 
@@ -127,7 +127,7 @@ float readTemperature() {
     }
 }
 
-// PID Calculation (with hysteresis & faster reheat)
+// PID Calculation (FULL CONTROL, NO FIXED VALUES)
 float calculatePID(float temperature) {
     long current_time = millis();
     float deltaT = (current_time - prev_time) / 1000.0;
@@ -136,19 +136,9 @@ float calculatePID(float temperature) {
 
     float error = set_temperature - temperature;
 
-    // 🔥 FIX: Reduce Hysteresis Buffer
-    if (temperature >= set_temperature + 1) {  // Stop heating at 201°C
-        return 0; 
-    }
-
-    // 🔥 FIX: Start heating faster when cooling is done
-    if (temperature < set_temperature - 3) {  // Heat up FASTER if too cold
-        return 180;  
-    }
-
-    // 🔥 Fix Integral Windup (reset integral when near setpoint)
+    // 🔥 Full PID Control, No Fixed Values
     if (abs(error) < 2) {
-        integral = 0;
+        integral = 0;  // Reset integral windup when near setpoint
     }
 
     // Apply Fuzzy Logic to Adjust kp
@@ -178,12 +168,8 @@ void loop() {
     float temperature = readTemperature();
     float heaterPower = calculatePID(temperature);
 
-    // 🔥 Ensure the heater turns OFF when needed
-    if (heaterPower <= 5) {
-        analogWrite(HEATER_PWM_PIN, 0); // Fully turn off heater
-    } else {
-        analogWrite(HEATER_PWM_PIN, heaterPower);
-    }
+    // 🔥 Full PID Control: Let it decide when to turn on/off
+    analogWrite(HEATER_PWM_PIN, heaterPower);
 
     // 📈 FIXED Serial Plotter Output (Temperature, PWM)
     Serial.print(temperature);
