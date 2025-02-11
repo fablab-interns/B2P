@@ -198,3 +198,43 @@ void loop() {
     Serial.println(heaterPower);
     delay(1000);
 }
+
+
+
+
+
+C:\Users\IT Girls\AppData\Local\Temp\.arduinoIDE-unsaved2025111-13544-ewjfuv.qf3jv\sketch_feb11a\sketch_feb11a.ino: In function 'void setupFuzzy()':
+C:\Users\IT Girls\AppData\Local\Temp\.arduinoIDE-unsaved2025111-13544-ewjfuv.qf3jv\sketch_feb11a\sketch_feb11a.ino:51:67: error: expected ')' before '->' token
+     fuzzy->addFuzzyRule(new FuzzyRule(1, new FuzzyRuleAntecedent()->joinSingle(negativeBig), new FuzzyRuleConsequent()->addOutput(highGain)));
+                                                                   ^~
+C:\Users\IT Girls\AppData\Local\Temp\.arduinoIDE-unsaved2025111-13544-ewjfuv.qf3jv\sketch_feb11a\sketch_feb11a.ino:51:119: error: expected ')' before '->' token
+     fuzzy->addFuzzyRule(new FuzzyRule(1, new FuzzyRuleAntecedent()->joinSingle(negativeBig), new FuzzyRuleConsequent()->addOutput(highGain)));
+                                                                                                                       ^~
+C:\Users\IT Girls\AppData\Local\Temp\.arduinoIDE-unsaved2025111-13544-ewjfuv.qf3jv\sketch_feb11a\sketch_feb11a.ino:52:67: error: expected ')' before '->' token
+     fuzzy->addFuzzyRule(new FuzzyRule(2, new FuzzyRuleAntecedent()->joinSingle(negativeSmall), new FuzzyRuleConsequent()->addOutput(mediumGain)));
+                                                                   ^~
+C:\Users\IT Girls\AppData\Local\Temp\.arduinoIDE-unsaved2025111-13544-ewjfuv.qf3jv\sketch_feb11a\sketch_feb11a.ino:52:121: error: expected ')' before '->' token
+     fuzzy->addFuzzyRule(new FuzzyRule(2, new FuzzyRuleAntecedent()->joinSingle(negativeSmall), new FuzzyRuleConsequent()->addOutput(mediumGain)));
+                                                                                                                         ^~
+C:\Users\IT Girls\AppData\Local\Temp\.arduinoIDE-unsaved2025111-13544-ewjfuv.qf3jv\sketch_feb11a\sketch_feb11a.ino:53:67: error: expected ')' before '->' token
+     fuzzy->addFuzzyRule(new FuzzyRule(3, new FuzzyRuleAntecedent()->joinSingle(zero), new FuzzyRuleConsequent()->addOutput(lowGain)));
+                                                                   ^~
+C:\Users\IT Girls\AppData\Local\Temp\.arduinoIDE-unsaved2025111-13544-ewjfuv.qf3jv\sketch_feb11a\sketch_feb11a.ino:53:112: error: expected ')' before '->' token
+     fuzzy->addFuzzyRule(new FuzzyRule(3, new FuzzyRuleAntecedent()->joinSingle(zero), new FuzzyRuleConsequent()->addOutput(lowGain)));
+                                                                                                                ^~
+C:\Users\IT Girls\AppData\Local\Temp\.arduinoIDE-unsaved2025111-13544-ewjfuv.qf3jv\sketch_feb11a\sketch_feb11a.ino:54:67: error: expected ')' before '->' token
+     fuzzy->addFuzzyRule(new FuzzyRule(4, new FuzzyRuleAntecedent()->joinSingle(positiveSmall), new FuzzyRuleConsequent()->addOutput(mediumGain)));
+                                                                   ^~
+C:\Users\IT Girls\AppData\Local\Temp\.arduinoIDE-unsaved2025111-13544-ewjfuv.qf3jv\sketch_feb11a\sketch_feb11a.ino:54:121: error: expected ')' before '->' token
+     fuzzy->addFuzzyRule(new FuzzyRule(4, new FuzzyRuleAntecedent()->joinSingle(positiveSmall), new FuzzyRuleConsequent()->addOutput(mediumGain)));
+                                                                                                                         ^~
+C:\Users\IT Girls\AppData\Local\Temp\.arduinoIDE-unsaved2025111-13544-ewjfuv.qf3jv\sketch_feb11a\sketch_feb11a.ino:55:67: error: expected ')' before '->' token
+     fuzzy->addFuzzyRule(new FuzzyRule(5, new FuzzyRuleAntecedent()->joinSingle(positiveBig), new FuzzyRuleConsequent()->addOutput(highGain)));
+                                                                   ^~
+C:\Users\IT Girls\AppData\Local\Temp\.arduinoIDE-unsaved2025111-13544-ewjfuv.qf3jv\sketch_feb11a\sketch_feb11a.ino:55:119: error: expected ')' before '->' token
+     fuzzy->addFuzzyRule(new FuzzyRule(5, new FuzzyRuleAntecedent()->joinSingle(positiveBig), new FuzzyRuleConsequent()->addOutput(highGain)));
+                                                                                                                       ^~
+
+exit status 1
+
+Compilation error: expected ')' before '->' token
