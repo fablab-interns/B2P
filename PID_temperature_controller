@@ -1,3 +1,5 @@
+// PID CONTROLLER------------------------------------------------------------------------
+
 #include "max6675.h" 
 
 #define MAX6675_CS 10  // Chip Select
@@ -79,4 +81,120 @@ void loop() {
     Serial.println(heaterPower);
 
     delay(1000); // Adjust loop timing for stability
+}
+
+
+
+
+
+
+
+
+
+// ------------------------------------------------ CONTROLLER WITH FUZZY LOGIC ----------------------------------------------------------------
+
+#include "max6675.h"
+#include <Fuzzy.h> // Include Fuzzy Logic Library
+
+// MAX6675 (Thermocouple) Pins
+#define MAX6675_CS 10
+#define MAX6675_SO 12
+#define MAX6675_SCK 13
+#define HEATER_PWM_PIN 3
+
+MAX6675 thermocouple(MAX6675_SCK, MAX6675_CS, MAX6675_SO);
+
+// Initial PID Gains
+float set_temperature = 220.0; 
+float kp = 10.0, ki = 1.5, kd = 0.8;
+float e_prev = 0, integral = 0;
+long prev_time = 0;
+
+// Create Fuzzy Logic Object
+Fuzzy *fuzzy = new Fuzzy();
+
+// Fuzzy Logic Variables
+FuzzySet *negativeBig, *negativeSmall, *zero, *positiveSmall, *positiveBig;
+FuzzySet *lowGain, *mediumGain, *highGain;
+
+void setupFuzzy() {
+    FuzzyInput *error = new FuzzyInput(1);
+    negativeBig = new FuzzySet(-50, -30, -20, -10);
+    negativeSmall = new FuzzySet(-15, -10, -5, 0);
+    zero = new FuzzySet(-5, 0, 0, 5);
+    positiveSmall = new FuzzySet(0, 5, 10, 15);
+    positiveBig = new FuzzySet(10, 20, 30, 50);
+
+    error->addFuzzySet(negativeBig);
+    error->addFuzzySet(negativeSmall);
+    error->addFuzzySet(zero);
+    error->addFuzzySet(positiveSmall);
+    error->addFuzzySet(positiveBig);
+    fuzzy->addFuzzyInput(error);
+
+    FuzzyOutput *kp_adjust = new FuzzyOutput(1);
+    lowGain = new FuzzySet(5, 7, 8, 10);
+    mediumGain = new FuzzySet(8, 10, 12, 15);
+    highGain = new FuzzySet(12, 15, 18, 20);
+
+    kp_adjust->addFuzzySet(lowGain);
+    kp_adjust->addFuzzySet(mediumGain);
+    kp_adjust->addFuzzySet(highGain);
+    fuzzy->addFuzzyOutput(kp_adjust);
+
+    // Rules:
+    fuzzy->addFuzzyRule(new FuzzyRule(1, new FuzzyRuleAntecedent()->joinSingle(negativeBig), new FuzzyRuleConsequent()->addOutput(highGain)));
+    fuzzy->addFuzzyRule(new FuzzyRule(2, new FuzzyRuleAntecedent()->joinSingle(negativeSmall), new FuzzyRuleConsequent()->addOutput(mediumGain)));
+    fuzzy->addFuzzyRule(new FuzzyRule(3, new FuzzyRuleAntecedent()->joinSingle(zero), new FuzzyRuleConsequent()->addOutput(lowGain)));
+    fuzzy->addFuzzyRule(new FuzzyRule(4, new FuzzyRuleAntecedent()->joinSingle(positiveSmall), new FuzzyRuleConsequent()->addOutput(mediumGain)));
+    fuzzy->addFuzzyRule(new FuzzyRule(5, new FuzzyRuleAntecedent()->joinSingle(positiveBig), new FuzzyRuleConsequent()->addOutput(highGain)));
+}
+
+float readTemperature() {
+    float temperature = thermocouple.readCelsius();
+    return (temperature < 0) ? 0.0 : temperature;
+}
+
+float calculatePID(float temperature) {
+    long current_time = millis();
+    float deltaT = (current_time - prev_time) / 1000.0;
+    prev_time = current_time;
+    if (deltaT == 0) deltaT = 0.01;
+
+    float error = set_temperature - temperature;
+
+    // Apply Fuzzy Logic to Adjust kp
+    fuzzy->setInput(1, error);
+    fuzzy->fuzzify();
+    kp = fuzzy->defuzzify(1); // Adjust kp dynamically
+
+    // PID Calculation
+    float P = kp * error;
+    integral += error * deltaT;
+    integral = constrain(integral, -255 / ki, 255 / ki);
+    float I = ki * integral;
+    float D = kd * (error - e_prev) / deltaT;
+    e_prev = error;
+
+    float output = P + I + D;
+    return constrain(output, 0, 255);
+}
+
+void setup() {
+    Serial.begin(115200);
+    pinMode(HEATER_PWM_PIN, OUTPUT);
+    setupFuzzy();
+}
+
+void loop() {
+    float temperature = readTemperature();
+    Serial.print("Temperature: ");
+    Serial.println(temperature);
+
+    float heaterPower = calculatePID(temperature);
+    analogWrite(HEATER_PWM_PIN, heaterPower);
+
+    Serial.print("PWM Output: ");
+    Serial.println(heaterPower);
+    delay(1000);
 }
