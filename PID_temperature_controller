@@ -106,7 +106,7 @@ MAX6675 thermocouple(MAX6675_SCK, MAX6675_CS, MAX6675_SO);
 
 // PID Gains
 float set_temperature = 200.0;
-float kp = 6.5, ki = 1.0, kd = 2.5;
+float kp = 9.65, ki = 1.0, kd = 2.65;
 float e_prev = 0, integral = 0;
 long prev_time = 0;
 
