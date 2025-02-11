@@ -3,7 +3,6 @@
 
 
 // ------------------------------------------------ CONTROLLER WITH FUZZY LOGIC ----------------------------------------------------------------
-
 #include "max6675.h"
 #include "Fuzzy.h"
 
@@ -17,7 +16,7 @@ MAX6675 thermocouple(MAX6675_SCK, MAX6675_CS, MAX6675_SO);
 
 // PID Gains
 float set_temperature = 200.0;
-float kp = 9.65, ki = 1.0, kd = 3.0;  // Increased kd to reduce oscillations
+float kp = 9.85, ki = 1.2, kd = 2.7;  // Increased kd to reduce oscillations
 float e_prev = 0, integral = 0;
 long prev_time = 0;
 
@@ -33,7 +32,7 @@ float readTemperature() {
         lastValidTemp = temperature;  // Store valid reading
         return temperature;
     } else {
-        Serial.println("⚠️ Invalid temperature detected, using last valid temperature.");
+        Serial.println(" Invalid temperature detected, using last valid temperature.");
         return lastValidTemp;  // Use last valid temperature
     }
 }
@@ -43,18 +42,18 @@ float calculatePID(float temperature) {
     long current_time = millis();
     float deltaT = (current_time - prev_time) / 1000.0;
     prev_time = current_time;
-    if (deltaT == 0) deltaT = 0.01;
+    if (deltaT == 0) deltaT = 0.1;
 
     float error = set_temperature - temperature;
 
-    // 🔥 Improved Integral Reset (Less Aggressive)
-    if (abs(error) < 0.5) {
+    // Improved Integral Reset (Less Aggressive)
+    if (abs(error) < 0.95) {
         integral = 0;  
     }
 
-    // 🔥 Smooth Fuzzy kp Adjustment (Prevents Sudden Jumps)
+    // Smooth Fuzzy kp Adjustment (Prevents Sudden Jumps)
     float new_kp = fuzzy.defuzzify(1);
-    kp = 0.9 * kp + 0.1 * new_kp;
+    kp = 1 * kp + 0.1 * new_kp;
 
     // PID Calculation
     float P = kp * error;
@@ -71,7 +70,7 @@ float calculatePID(float temperature) {
 void setup() {
     Serial.begin(115200);
     pinMode(HEATER_PWM_PIN, OUTPUT);
-    Serial.println("🔥 Heating System Started...");
+    Serial.println(" Heating System Started...");
 }
 
 void loop() {
@@ -84,5 +83,5 @@ void loop() {
     Serial.print(",");
     Serial.println(heaterPower);
 
-    delay(250);  // Faster updates
+    delay(600);  // Faster updates
 }
