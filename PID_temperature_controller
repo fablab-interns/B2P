@@ -171,9 +171,6 @@ void setup() {
 
 void loop() {
     float temperature = readTemperature();
-    Serial.print("Current Temperature: ");
-    Serial.println(temperature);
-
     float heaterPower = calculatePID(temperature);
 
     // 🔥 Ensure the heater turns OFF when needed
@@ -183,7 +180,11 @@ void loop() {
         analogWrite(HEATER_PWM_PIN, heaterPower);
     }
 
-    Serial.print("PWM Output: ");
+    // 📈 Send data to Serial Plotter
+    Serial.print("Temperature: ");
+    Serial.print(temperature);
+    Serial.print("\tPWM Output: ");
     Serial.println(heaterPower);
-    delay(1000);
+
+    delay(500); // Reduce delay for smoother plot
 }
