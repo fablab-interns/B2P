@@ -83,3 +83,100 @@ void moveBackward() {
   digitalWrite(MotRev, LOW);   // Stop the motor
   Serial.println("Motor Stopped after Moving Backward");
 }
+
+
+
+
+
+// ---------------------------------------------------------
+
+#define MotFwd  19  // Motor Forward pin
+#define MotRev  21  // Motor Reverse pin
+
+#define ButtonInc  32  // Increment button pin
+#define ButtonDec  33  // Decrement button pin
+
+int encoderPin1 = 18; // Encoder Output 'A' (connected to interrupt pin)
+int encoderPin2 = 5;  // Encoder Output 'B' (connected to interrupt pin)
+
+volatile int lastEncoded = 0; // Stores previous state of encoder
+volatile long encoderValue = 0; // Raw encoder value (counts pulses)
+
+unsigned long lastDebounceTimeInc = 0;  // Last debounce time for increment button
+unsigned long lastDebounceTimeDec = 0;  // Last debounce time for decrement button
+unsigned long debounceDelay = 50;  // Debounce delay (in milliseconds)
+
+int motorSpeedRPM = 60;  // Motor speed in RPM (change this value to set desired speed)
+int peakCountPerRevolution = 1000; // Number of encoder pulses per revolution
+unsigned long timePerPeak;  // Time per peak in microseconds
+
+void setup() {
+  pinMode(MotFwd, OUTPUT); 
+  pinMode(MotRev, OUTPUT); 
+  Serial.begin(9600); // Initialize serial communication
+
+  pinMode(ButtonInc, INPUT_PULLUP);  // Set increment button pin as input with pull-up resistor
+  pinMode(ButtonDec, INPUT_PULLUP);  // Set decrement button pin as input with pull-up resistor
+
+  // Initially, motor should be off
+  digitalWrite(MotFwd, LOW);
+  digitalWrite(MotRev, LOW);
+
+  // Calculate time per peak based on the desired RPM
+  timePerPeak = (60 * 1000000) / (motorSpeedRPM * peakCountPerRevolution);
+  Serial.print("Time per peak: ");
+  Serial.println(timePerPeak);  // Print the time per peak to the Serial Monitor for debugging
+}
+
+void loop() {
+  // Read the state of the increment button
+  int readingInc = digitalRead(ButtonInc);
+
+  // Check if the increment button has been pressed (LOW because of INPUT_PULLUP)
+  if (readingInc == LOW && (millis() - lastDebounceTimeInc) > debounceDelay) {
+    motorSpeedRPM += 10;  // Increase speed by 10 RPM
+    timePerPeak = (60 * 1000000) / (motorSpeedRPM * peakCountPerRevolution);
+    lastDebounceTimeInc = millis();  // Record the time of the press
+    Serial.print("Motor speed increased to: ");
+    Serial.println(motorSpeedRPM);
+  }
+
+  // Read the state of the decrement button
+  int readingDec = digitalRead(ButtonDec);
+
+  // Check if the decrement button has been pressed (LOW because of INPUT_PULLUP)
+  if (readingDec == LOW && (millis() - lastDebounceTimeDec) > debounceDelay) {
+    motorSpeedRPM -= 10;  // Decrease speed by 10 RPM
+    if (motorSpeedRPM < 0) motorSpeedRPM = 0;  // Prevent going below 0 RPM
+    timePerPeak = (60 * 1000000) / (motorSpeedRPM * peakCountPerRevolution);
+    lastDebounceTimeDec = millis();  // Record the time of the press
+    Serial.print("Motor speed decreased to: ");
+    Serial.println(motorSpeedRPM);
+  }
+
+  // Control the motor speed based on RPM
+  moveMotorAtSpeed();
+
+  delay(100); // Small delay for stability
+}
+
+// Move motor at the calculated speed
+void moveMotorAtSpeed() {
+  // Turn motor forward
+  digitalWrite(MotFwd, HIGH);  
+  digitalWrite(MotRev, LOW);   
+
+  // Wait for the calculated time per peak to control the speed (RPM)
+  delayMicroseconds(timePerPeak);  // Delay between each peak to control speed
+
+  // Update encoder value (simulate a pulse from the encoder)
+  encoderValue++;
+
+  // Stop motor after a full revolution (1000 peaks)
+  if (encoderValue >= peakCountPerRevolution) {
+    digitalWrite(MotFwd, LOW);  // Stop motor
+    encoderValue = 0;  // Reset encoder value for next revolution
+    Serial.println("Motor stopped after one full revolution");
+  }
+}
+
