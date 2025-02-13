@@ -196,7 +196,6 @@ void moveMotorAtSpeed() {
 int encoderPin1 = 18; // Encoder Output 'A' (connected to interrupt pin)
 int encoderPin2 = 5;  // Encoder Output 'B' (connected to interrupt pin)
 
-volatile int lastEncoded = 0; // Stores previous state of encoder
 volatile long encoderValue = 0; // Raw encoder value (counts pulses)
 
 unsigned long lastDebounceTimeInc = 0;  // Last debounce time for increment button
@@ -209,6 +208,7 @@ int rotations = 5;  // Default number of rotations
 int lastRotations = 0;  // Store last number of rotations
 
 int peakCountPerRevolution = 1000;  // Number of encoder pulses per revolution
+bool motorRunning = false;  // Track if the motor is running
 
 void setup() {
   pinMode(MotFwd, OUTPUT); 
@@ -262,7 +262,9 @@ void loop() {
   }
 
   // Control the motor to move for the desired number of rotations
-  moveMotorAtRotations(rotations);
+  if (!motorRunning) {
+    moveMotorAtRotations(rotations);
+  }
 
   delay(100); // Small delay for stability
 }
@@ -271,7 +273,7 @@ void loop() {
 void moveMotorAtRotations(int rotationsToMove) {
   long targetEncoderValue = encoderValue + rotationsToMove * peakCountPerRevolution;
 
-  // Turn motor forward
+  motorRunning = true;  // Set motor running state to true
   digitalWrite(MotFwd, HIGH);  
   digitalWrite(MotRev, LOW);   
 
@@ -283,6 +285,7 @@ void moveMotorAtRotations(int rotationsToMove) {
   // Stop the motor after completing the desired rotations
   digitalWrite(MotFwd, LOW);  // Stop motor
   encoderValue = 0; // Reset encoder value for the next set of rotations
+  motorRunning = false;  // Reset motor running state
   Serial.print("Motor stopped after ");
   Serial.print(rotationsToMove);
   Serial.println(" rotations");
@@ -290,6 +293,7 @@ void moveMotorAtRotations(int rotationsToMove) {
 
 // Move motor backward (as long as the reverse button is pressed)
 void moveBackward() {
+  motorRunning = true;  // Set motor running state to true
   digitalWrite(MotFwd, LOW);   // Ensure forward is off
   digitalWrite(MotRev, HIGH);  // Turn motor in reverse
 
@@ -300,5 +304,6 @@ void moveBackward() {
 
   // Stop motor when button is released
   digitalWrite(MotRev, LOW);   // Stop motor
+  motorRunning = false;  // Reset motor running state
   Serial.println("Motor stopped after moving backward");
 }
