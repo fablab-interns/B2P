@@ -1,79 +1,140 @@
-// Motor A
-int motor1Pin1 = 27;
-int motor1Pin2 = 26;
-int enable1Pin = 14;
+#define MotFwd  19  // Motor Forward pin (PWM)
+#define MotRev  21  // Motor Reverse pin (PWM)
 
-// Button Pins
-int incrementButton = 32;
-int decrementButton = 33;
-int toggleButton = 34;
-int oppositeButton = 35;
+#define ButtonInc  12  // Increment button pin
+#define ButtonDec  13  // Decrement button pin
+#define ButtonRepeat  14  // Repeat button pin
+#define ButtonRev  15  // Reverse button pin
 
-// PWM properties
-const int freq = 30000;
-const int pwmChannel = 0;
-const int resolution = 8;
-int dutyCycle = 200;
+int encoderPin1 = 18; // Encoder Output 'A' (connected to interrupt pin)
+int encoderPin2 = 5;  // Encoder Output 'B' (connected to interrupt pin)
 
-// Variables to store last movement
-int lastDirection = 1; // 1 for forward, -1 for backward
-int lastSpeed = 200;
+volatile int lastEncoded = 0; // Stores previous state of encoder
+volatile long encoderValue = 0; // Raw encoder value (counts pulses)
+
+int lastRPM = 0; // Stores the last RPM setting
+int currentRPM = 0; // Current RPM setting
+int rpmStep = 50; // RPM increment/decrement step size
 
 void setup() {
-    pinMode(motor1Pin1, OUTPUT);
-    pinMode(motor1Pin2, OUTPUT);
-    pinMode(enable1Pin, OUTPUT);
-    pinMode(incrementButton, INPUT_PULLDOWN);
-    pinMode(decrementButton, INPUT_PULLDOWN);
-    pinMode(toggleButton, INPUT_PULLDOWN);
-    pinMode(oppositeButton, INPUT_PULLDOWN);
-    
-    ledcSetup(pwmChannel, freq, resolution);
-    ledcAttachPin(enable1Pin, pwmChannel);
-    
-    Serial.begin(115200);
+  pinMode(MotFwd, OUTPUT); 
+  pinMode(MotRev, OUTPUT); 
+  Serial.begin(9600); // Initialize serial communication
+
+  pinMode(encoderPin1, INPUT_PULLUP); 
+  pinMode(encoderPin2, INPUT_PULLUP);
+
+  digitalWrite(encoderPin1, HIGH); // Enable pull-up resistors
+  digitalWrite(encoderPin2, HIGH); // Enable pull-up resistors
+
+  pinMode(ButtonInc, INPUT_PULLUP);
+  pinMode(ButtonDec, INPUT_PULLUP);
+  pinMode(ButtonRepeat, INPUT_PULLUP);
+  pinMode(ButtonRev, INPUT_PULLUP);
+
+  // Call updateEncoder() when any state change is detected on encoder pins
+  attachInterrupt(digitalPinToInterrupt(encoderPin1), updateEncoder, CHANGE); 
+  attachInterrupt(digitalPinToInterrupt(encoderPin2), updateEncoder, CHANGE);
+
+  // Ensure motor is off initially
+  stopMotor();
 }
 
 void loop() {
-    if (digitalRead(incrementButton) == HIGH) {
-        dutyCycle = min(dutyCycle + 10, 255);
-        Serial.print("Increasing speed: ");
-        Serial.println(dutyCycle);
-        moveMotor(lastDirection, dutyCycle);
-        lastSpeed = dutyCycle;
-        delay(300);
-    }
-    
-    if (digitalRead(decrementButton) == HIGH) {
-        dutyCycle = max(dutyCycle - 10, 0);
-        Serial.print("Decreasing speed: ");
-        Serial.println(dutyCycle);
-        moveMotor(lastDirection, dutyCycle);
-        lastSpeed = dutyCycle;
-        delay(300);
-    }
-    
-    if (digitalRead(toggleButton) == HIGH) {
-        Serial.println("Repeating last movement");
-        moveMotor(lastDirection, lastSpeed);
-        delay(300);
-    }
-    
-    if (digitalRead(oppositeButton) == HIGH) {
-        lastDirection *= -1;
-        Serial.println("Changing direction");
-        moveMotor(lastDirection, dutyCycle);
-        delay(300);
-    }
+  // Check button states and perform actions
+  if (digitalRead(ButtonInc) == LOW) {
+    incrementRPM();
+    delay(200); // Debounce delay
+  }
+
+  if (digitalRead(ButtonDec) == LOW) {
+    decrementRPM();
+    delay(200); // Debounce delay
+  }
+
+  if (digitalRead(ButtonRepeat) == LOW) {
+    repeatLastRPM();
+    delay(200); // Debounce delay
+  }
+
+  if (digitalRead(ButtonRev) == LOW) {
+    reverseMotor();
+  } else {
+    // If reverse button is not pressed, run motor forward at current RPM
+    runMotorForward(currentRPM);
+  }
+
+  // Print encoder value and current RPM for debugging
+  Serial.print("Encoder value: ");
+  Serial.print(encoderValue);
+  Serial.print(", Current RPM: ");
+  Serial.println(currentRPM);
+
+  delay(100); // Small delay for stability
 }
 
-void moveMotor(int direction, int speed) {
-    if (direction == 1) {
-        digitalWrite(motor1Pin1, LOW);
-        digitalWrite(motor1Pin2, HIGH);
-    } else {
-        digitalWrite(motor1Pin1, HIGH);
-        digitalWrite(motor1Pin2, LOW);
-    }
-    ledcWrite(pwmChannel, speed);
+void incrementRPM() {
+  currentRPM += rpmStep; // Increase RPM by step size
+  if (currentRPM > 255) currentRPM = 255; // Limit RPM to maximum PWM value
+  lastRPM = currentRPM; // Store last RPM setting
+  Serial.print("Incremented RPM to: ");
+  Serial.println(currentRPM);
+}
+
+void decrementRPM() {
+  currentRPM -= rpmStep; // Decrease RPM by step size
+  if (currentRPM < -255) currentRPM = -255; // Limit RPM to minimum PWM value
+  lastRPM = currentRPM; // Store last RPM setting
+  Serial.print("Decremented RPM to: ");
+  Serial.println(currentRPM);
+}
+
+void repeatLastRPM() {
+  currentRPM = lastRPM; // Repeat last RPM setting
+  Serial.print("Repeated last RPM: ");
+  Serial.println(currentRPM);
+}
+
+void reverseMotor() {
+  // Run motor in reverse at full speed while button is pressed
+  analogWrite(MotFwd, 0); // Stop forward direction
+  analogWrite(MotRev, 255); // Run reverse direction at full speed
+}
+
+void runMotorForward(int rpm) {
+  // Run motor forward at the specified RPM
+  if (rpm > 0) {
+    analogWrite(MotFwd, rpm); // Set forward speed
+    analogWrite(MotRev, 0); // Stop reverse direction
+  } else if (rpm < 0) {
+    analogWrite(MotFwd, 0); // Stop forward direction
+    analogWrite(MotRev, abs(rpm)); // Set reverse speed
+  } else {
+    stopMotor(); // Stop motor if RPM is 0
+  }
+}
+
+void stopMotor() {
+  // Stop the motor
+  analogWrite(MotFwd, 0);
+  analogWrite(MotRev, 0);
+}
+
+// Update encoder value based on changes in encoder signals
+void updateEncoder() {
+  int MSB = digitalRead(encoderPin1); // Read the most significant bit (A signal)
+  int LSB = digitalRead(encoderPin2); // Read the least significant bit (B signal)
+
+  int encoded = (MSB << 1) | LSB; // Combine both signals into a single value
+  int sum = (lastEncoded << 2) | encoded; // Combine with the last encoder state
+
+  // Increment or decrement encoder value based on rotation direction
+  if (sum == 0b1101 || sum == 0b0100 || sum == 0b0010 || sum == 0b1011) {
+    encoderValue--; // If encoder rotates backward
+  }
+  if (sum == 0b1110 || sum == 0b0111 || sum == 0b0001 || sum == 0b1000) {
+    encoderValue++; // If encoder rotates forward
+  }
+
+  lastEncoded = encoded; // Store current state for next comparison
 }
