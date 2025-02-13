@@ -4,6 +4,13 @@
 #define ButtonInc  32  // Increment button pin
 #define ButtonDec  33  // Decrement button pin
 
+int lastButtonIncState = HIGH;  // Previous state of increment button
+int lastButtonDecState = HIGH;  // Previous state of decrement button
+
+unsigned long lastDebounceTimeInc = 0;  // Last debounce time for increment button
+unsigned long lastDebounceTimeDec = 0;  // Last debounce time for decrement button
+unsigned long debounceDelay = 50;  // Debounce delay (in milliseconds)
+
 void setup() {
   pinMode(MotFwd, OUTPUT); 
   pinMode(MotRev, OUTPUT); 
@@ -18,17 +25,37 @@ void setup() {
 }
 
 void loop() {
-  // Check if the increment button is pressed (LOW because of INPUT_PULLUP)
-  if (digitalRead(ButtonInc) == LOW) {
-    moveForward();
-    delay(200);  // Debounce delay to avoid multiple triggers
+  // Read the state of the increment button
+  int readingInc = digitalRead(ButtonInc);
+  if (readingInc == LOW && lastButtonIncState == HIGH && (millis() - lastDebounceTimeInc) > debounceDelay) {
+    // Button was pressed and debounce time has passed
+    moveForward();  // Move forward for a certain amount of time
+    lastDebounceTimeInc = millis();  // Record the time of the press
   }
 
-  // Check if the decrement button is pressed (LOW because of INPUT_PULLUP)
-  if (digitalRead(ButtonDec) == LOW) {
-    moveBackward();
-    delay(200);  // Debounce delay to avoid multiple triggers
+  // Read the state of the decrement button
+  int readingDec = digitalRead(ButtonDec);
+  if (readingDec == LOW && lastButtonDecState == HIGH && (millis() - lastDebounceTimeDec) > debounceDelay) {
+    // Button was pressed and debounce time has passed
+    moveBackward();  // Move backward for a certain amount of time
+    lastDebounceTimeDec = millis();  // Record the time of the press
   }
+
+  // Store the current button state for the next loop iteration
+  lastButtonIncState = readingInc;
+  lastButtonDecState = readingDec;
+
+  // Print motor status for debugging
+  Serial.print("Motor is: ");
+  if (digitalRead(MotFwd) == HIGH) {
+    Serial.println("Forward");
+  } else if (digitalRead(MotRev) == HIGH) {
+    Serial.println("Reverse");
+  } else {
+    Serial.println("Stopped");
+  }
+
+  delay(100); // Small delay for stability
 }
 
 // Move motor forward for a set time (adjust the time to control distance)
@@ -53,38 +80,4 @@ void moveBackward() {
   
   digitalWrite(MotRev, LOW);   // Stop the motor
   Serial.println("Motor Stopped after Moving Backward");
-}
-
-
-
-
-
-
-
-
-// -----------------------------------------------------------------------
-#define ButtonInc  32  // Increment button pin
-#define ButtonDec  33  // Decrement button pin
-
-void setup() {
-  Serial.begin(9600);  // Initialize serial communication
-
-  pinMode(ButtonInc, INPUT_PULLUP);  // Set increment button pin as input with pull-up resistor
-  pinMode(ButtonDec, INPUT_PULLUP);  // Set decrement button pin as input with pull-up resistor
-}
-
-void loop() {
-  // Check if the increment button is pressed (LOW because of INPUT_PULLUP)
-  if (digitalRead(ButtonInc) == LOW) {
-    Serial.println("Increment button pressed");
-    delay(200);  // Debounce delay to avoid multiple triggers
-  }
-
-  // Check if the decrement button is pressed (LOW because of INPUT_PULLUP)
-  if (digitalRead(ButtonDec) == LOW) {
-    Serial.println("Decrement button pressed");
-    delay(200);  // Debounce delay to avoid multiple triggers
-  }
-
-  delay(100);  // Small delay for stability
 }
