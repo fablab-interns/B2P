@@ -185,125 +185,202 @@ void moveMotorAtSpeed() {
 
 
 // ----------------------------------------------------------------------------
-#define MotFwd  19  // Motor Forward pin
-#define MotRev  21  // Motor Reverse pin
+#include <Bounce2.h>
 
-#define ButtonInc  32  // Increment button pin
-#define ButtonDec  33  // Decrement button pin
-#define ButtonToggle  34  // Toggle button pin
-#define ButtonRev  35  // Reverse button pin
+// Motor control pins (Change according to ESP32 GPIO pins)
+#define IN1 19
+#define IN2 21
+#define ENA 21
 
-int encoderPin1 = 18; // Encoder Output 'A' (connected to interrupt pin)
-int encoderPin2 = 5;  // Encoder Output 'B' (connected to interrupt pin)
+// Encoder pins (Change according to ESP32 GPIO pins)
+#define ENCODER_C1 18
+#define ENCODER_C2 5
 
-volatile long encoderValue = 0; // Raw encoder value (counts pulses)
+// Button pins (Change according to ESP32 GPIO pins)
+#define BUTTON_DECREASE_BACKWARD_PIN 35  // New button to decrease the motor position
+#define BUTTON_DECREMENT_PIN 33
+#define BUTTON_INCREMENT_PIN 32
+#define BUTTON_TOGGLE_PIN 34  // The toggle button
 
-unsigned long lastDebounceTimeInc = 0;  // Last debounce time for increment button
-unsigned long lastDebounceTimeDec = 0;  // Last debounce time for decrement button
-unsigned long lastDebounceTimeToggle = 0;  // Last debounce time for toggle button
-unsigned long lastDebounceTimeRev = 0;  // Last debounce time for reverse button
-unsigned long debounceDelay = 50;  // Debounce delay (in milliseconds)
+// Variables
+int fixedForwardSteps = 400;  // for cca 4 mm overlap
+volatile long encoderCount = 0;  // Tracks the encoder count
+const int CPR = 28;             // Counts per revolution (7 PPR * 4 quadrature steps)
+const int incrementSteps = 1 * CPR;  // Encoder counts for 4 shaft rotations
+const int motorSpeed = 150;     // Motor speed (0 to 255)
+bool motorRunning = false;      // Tracks if the motor is running
+long targetSteps = 0;           // Total encoder counts to reach (updated with each increment/decrement)
 
-int rotations = 5;  // Default number of rotations
-int lastRotations = 0;  // Store last number of rotations
-
-int peakCountPerRevolution = 1000;  // Number of encoder pulses per revolution
-bool motorRunning = false;  // Track if the motor is running
+// Button instances
+Bounce decreaseBackwardButton = Bounce();  // New button instance for decrease backward
+Bounce incrementButton = Bounce();
+Bounce decrementButton = Bounce();
+Bounce toggleButton = Bounce();
 
 void setup() {
-  pinMode(MotFwd, OUTPUT); 
-  pinMode(MotRev, OUTPUT); 
-  Serial.begin(9600); // Initialize serial communication
+  // Motor pins
+  pinMode(IN1, OUTPUT);
+  pinMode(IN2, OUTPUT);
+  pinMode(ENA, OUTPUT);
 
-  pinMode(ButtonInc, INPUT_PULLUP);  // Set increment button pin as input with pull-up resistor
-  pinMode(ButtonDec, INPUT_PULLUP);  // Set decrement button pin as input with pull-up resistor
-  pinMode(ButtonToggle, INPUT_PULLUP);  // Set toggle button pin as input with pull-up resistor
-  pinMode(ButtonRev, INPUT_PULLUP);  // Set reverse button pin as input with pull-up resistor
+  // Encoder pins
+  pinMode(ENCODER_C1, INPUT);
+  pinMode(ENCODER_C2, INPUT);
 
-  // Initially, motor should be off
-  digitalWrite(MotFwd, LOW);
-  digitalWrite(MotRev, LOW);
+  // Button pins
+  pinMode(BUTTON_DECREASE_BACKWARD_PIN, INPUT_PULLUP);  // Setup for the new backward button
+  pinMode(BUTTON_INCREMENT_PIN, INPUT_PULLUP);
+  pinMode(BUTTON_DECREMENT_PIN, INPUT_PULLUP);
+  pinMode(BUTTON_TOGGLE_PIN, INPUT_PULLUP);
+
+  // Initialize the Bounce objects
+  decreaseBackwardButton.attach(BUTTON_DECREASE_BACKWARD_PIN);  // Attach new backward button
+  decreaseBackwardButton.interval(25); // Debounce interval for decrease backward button
+
+  incrementButton.attach(BUTTON_INCREMENT_PIN);
+  incrementButton.interval(25); // Debounce interval for increment button
+
+  decrementButton.attach(BUTTON_DECREMENT_PIN);
+  decrementButton.interval(25); // Debounce interval for decrement button
+
+  toggleButton.attach(BUTTON_TOGGLE_PIN);
+  toggleButton.interval(25); // Debounce interval for toggle button
+
+  // Initially ensure motor is stopped
+  ledcWrite(0, 0);
+  digitalWrite(IN1, LOW);
+  digitalWrite(IN2, LOW);
+
+  // Attach encoder interrupt
+  attachInterrupt(digitalPinToInterrupt(ENCODER_C1), readEncoder, CHANGE);
+
+  // Start serial communication
+  Serial.begin(115200);
 }
 
 void loop() {
-  // Read the state of the increment button
-  int readingInc = digitalRead(ButtonInc);
-  if (readingInc == LOW && (millis() - lastDebounceTimeInc) > debounceDelay) {
-    rotations++;  // Increase the number of rotations
-    lastDebounceTimeInc = millis();  // Record the time of the press
-    Serial.print("Number of rotations increased to: ");
-    Serial.println(rotations);
+  // Update button states
+  decreaseBackwardButton.update();  // Update the new backward button state
+  incrementButton.update();
+  decrementButton.update();
+  toggleButton.update();
+
+  // Increment button logic: Add 4 shaft rotations to the target
+  if (incrementButton.fell() && !motorRunning) {
+    Serial.println("Increment Button Pressed");
+
+    // Add 4 rotations to the target
+    targetSteps += incrementSteps;
+    Serial.println("steps:");
+    Serial.println(targetSteps);
+
+    executeMotorMovement();
+  }
+  
+  // Decrement button logic: Subtract 4 shaft rotations from the target or move backward
+  if (decrementButton.fell() && !motorRunning) {
+    Serial.println("Decrement Button Pressed");
+
+    // Subtract 4 rotations, ensuring target doesn't go below 0
+    if (targetSteps >= incrementSteps) {
+      targetSteps -= incrementSteps;
+      if (targetSteps > 0) {
+        executeMotorMovement();
+      } else {
+        Serial.println("No Rotations Set (Target = 0)");
+      }
+    } else {
+      Serial.println("Cannot Decrease Below Zero Rotations");
+    }
   }
 
-  // Read the state of the decrement button
-  int readingDec = digitalRead(ButtonDec);
-  if (readingDec == LOW && (millis() - lastDebounceTimeDec) > debounceDelay) {
-    rotations--;  // Decrease the number of rotations
-    if (rotations < 1) rotations = 1;  // Prevent going below 1 rotation
-    lastDebounceTimeDec = millis();  // Record the time of the press
-    Serial.print("Number of rotations decreased to: ");
-    Serial.println(rotations);
+  // Toggle button logic: Start/stop the motor with a fixed target forward
+  if (toggleButton.fell()) {
+    if (!motorRunning) {
+      // When toggle is pressed, start moving the motor forward for a fixed number of encoder counts
+      targetSteps = fixedForwardSteps;  // Set target to 350 encoder counts
+      Serial.println("Toggle Button Pressed: Moving Forward for Fixed Steps");
+
+      // Execute motor movement to the target
+      executeMotorMovement();
+    } else {
+      // If the motor is already running, stop it
+      stopMotor();
+      Serial.println("Motor Stopped via Toggle");
+    }
   }
 
-  // Read the state of the toggle button
-  int readingToggle = digitalRead(ButtonToggle);
-  if (readingToggle == LOW && (millis() - lastDebounceTimeToggle) > debounceDelay) {
-    lastRotations = rotations;  // Store last rotation count
-    Serial.print("Toggled, last rotations set to: ");
-    Serial.println(lastRotations);
-    lastDebounceTimeToggle = millis();  // Record the time of the press
+  // Decrease backward button logic: Move motor backward while the button is pressed
+  if (decreaseBackwardButton.read() == LOW) {  // If the button is pressed
+    if (!motorRunning) {  // Only start the motor if it's not already running
+      Serial.println("Decrease Backward Button Pressed - Moving Motor Backward");
+      moveBackwardsContinuous();  // Start moving backward
+    }
+  } else {  // If the button is released
+    if (motorRunning) {
+      stopMotor();  // Stop the motor immediately after release
+      Serial.println("Motor Stopped after Button Released");
+    }
   }
-
-  // Read the state of the reverse button
-  int readingRev = digitalRead(ButtonRev);
-  if (readingRev == LOW && (millis() - lastDebounceTimeRev) > debounceDelay) {
-    moveBackward();  // Move backward as long as button is pressed
-    lastDebounceTimeRev = millis();  // Record the time of the press
-  }
-
-  // Control the motor to move for the desired number of rotations
-  if (!motorRunning) {
-    moveMotorAtRotations(rotations);
-  }
-
-  delay(100); // Small delay for stability
 }
 
-// Move motor forward for a set number of rotations
-void moveMotorAtRotations(int rotationsToMove) {
-  long targetEncoderValue = encoderValue + rotationsToMove * peakCountPerRevolution;
+// Function to execute motor movement to target steps
+void executeMotorMovement() {
+  encoderCount = 0;  // Reset encoder count
+  digitalWrite(IN1, LOW);  // Forward direction
+  digitalWrite(IN2, HIGH);
+  ledcWrite(0, motorSpeed);  // Set motor speed using PWM
+  motorRunning = true;
 
-  motorRunning = true;  // Set motor running state to true
-  digitalWrite(MotFwd, HIGH);  
-  digitalWrite(MotRev, LOW);   
-
-  // Keep moving the motor until we reach the target rotations
-  while (encoderValue < targetEncoderValue) {
-    // Wait until the target rotations are reached
+  // Wait until the target steps are reached
+  while (encoderCount < targetSteps) {
+    Serial.print("Encoder Count: ");
+    Serial.println(encoderCount);
+    delay(10);  // Small delay to allow encoder to update
   }
 
-  // Stop the motor after completing the desired rotations
-  digitalWrite(MotFwd, LOW);  // Stop motor
-  encoderValue = 0; // Reset encoder value for the next set of rotations
-  motorRunning = false;  // Reset motor running state
-  Serial.print("Motor stopped after ");
-  Serial.print(rotationsToMove);
-  Serial.println(" rotations");
+  // Stop the motor after completing the target
+  stopMotor();
+  Serial.println("Motor Stopped after Target Rotations");
 }
 
-// Move motor backward (as long as the reverse button is pressed)
-void moveBackward() {
-  motorRunning = true;  // Set motor running state to true
-  digitalWrite(MotFwd, LOW);   // Ensure forward is off
-  digitalWrite(MotRev, HIGH);  // Turn motor in reverse
+// Function to move the motor backward continuously while the button is pressed
+void moveBackwardsContinuous() {
+  digitalWrite(IN1, HIGH);  // Reverse direction
+  digitalWrite(IN2, LOW);
+  ledcWrite(0, motorSpeed);  // Set motor speed using PWM
+  motorRunning = true;  // Indicate that the motor is running
 
-  // Keep moving in reverse as long as button is pressed
-  while (digitalRead(ButtonRev) == LOW) {
-    // Move motor backward
+  // Print encoder count while moving backward
+  Serial.print("Reversing - Encoder Count: ");
+  Serial.println(encoderCount);
+
+  // Small delay to allow encoder to update
+  delay(10);
+}
+
+// Function to stop the motor
+void stopMotor() {
+  ledcWrite(0, 0);
+  digitalWrite(IN1, LOW);
+  digitalWrite(IN2, LOW);
+  motorRunning = false;
+}
+
+// Encoder interrupt function to update encoder count
+void readEncoder() {
+  static int lastState = LOW;
+  int stateC1 = digitalRead(ENCODER_C1);
+  int stateC2 = digitalRead(ENCODER_C2);
+
+  if (stateC1 != lastState) {
+    if (stateC1 == stateC2) {
+      encoderCount++;
+    } else {
+      encoderCount--;
+    }
+    Serial.print("Interrupt: Encoder Count = ");
+    Serial.println(encoderCount);  // Debugging print
   }
-
-  // Stop motor when button is released
-  digitalWrite(MotRev, LOW);   // Stop motor
-  motorRunning = false;  // Reset motor running state
-  Serial.println("Motor stopped after moving backward");
+  lastState = stateC1;
 }
