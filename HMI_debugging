@@ -27,21 +27,23 @@ void setup() {
 void loop() {
   // Read the state of the increment button
   int readingInc = digitalRead(ButtonInc);
+
+  // Check if the increment button has been pressed (LOW because of INPUT_PULLUP)
   if (readingInc == LOW && lastButtonIncState == HIGH && (millis() - lastDebounceTimeInc) > debounceDelay) {
-    // Button was pressed and debounce time has passed
     moveForward();  // Move forward for a certain amount of time
     lastDebounceTimeInc = millis();  // Record the time of the press
   }
 
   // Read the state of the decrement button
   int readingDec = digitalRead(ButtonDec);
+
+  // Check if the decrement button has been pressed (LOW because of INPUT_PULLUP)
   if (readingDec == LOW && lastButtonDecState == HIGH && (millis() - lastDebounceTimeDec) > debounceDelay) {
-    // Button was pressed and debounce time has passed
     moveBackward();  // Move backward for a certain amount of time
     lastDebounceTimeDec = millis();  // Record the time of the press
   }
 
-  // Store the current button state for the next loop iteration
+  // Store the current button states for the next loop iteration
   lastButtonIncState = readingInc;
   lastButtonDecState = readingDec;
 
