@@ -270,7 +270,7 @@ void loop() {
 // Move motor forward for a set number of rotations
 void moveMotorAtRotations(int rotationsToMove) {
   long targetEncoderValue = encoderValue + rotationsToMove * peakCountPerRevolution;
-  
+
   // Turn motor forward
   digitalWrite(MotFwd, HIGH);  
   digitalWrite(MotRev, LOW);   
@@ -282,6 +282,7 @@ void moveMotorAtRotations(int rotationsToMove) {
 
   // Stop the motor after completing the desired rotations
   digitalWrite(MotFwd, LOW);  // Stop motor
+  encoderValue = 0; // Reset encoder value for the next set of rotations
   Serial.print("Motor stopped after ");
   Serial.print(rotationsToMove);
   Serial.println(" rotations");
@@ -301,4 +302,3 @@ void moveBackward() {
   digitalWrite(MotRev, LOW);   // Stop motor
   Serial.println("Motor stopped after moving backward");
 }
-
