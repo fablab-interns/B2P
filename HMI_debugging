@@ -1,3 +1,69 @@
+// to calculate the number of pulses per rotation
+#define C1 18
+#define C2 21
+#define IN1 27
+#define IN2 26
+#define enable 25 // enable used for?
+
+volatile long EncValue = 0;  // Variable to track the number of encoder ticks
+const long fullRotationTicks = 700;  // Number of ticks for one full motor shaft rotation (based on your motor specs)
+bool motorRunning = false;  // Flag to track if the motor is still running
+
+void setup() {
+  pinMode(IN1, OUTPUT);
+  pinMode(IN2, OUTPUT);
+  pinMode(enable, OUTPUT);
+  pinMode(C1, INPUT);
+  pinMode(C2, INPUT);
+  
+  attachInterrupt(digitalPinToInterrupt(C1), updateEnc, RISING);  // Attach interrupt to C1 for encoder ticks
+  Serial.begin(115200);  // Start serial communication
+}
+
+void loop() {
+  // Start motor in forward direction
+  if (!motorRunning) {
+    digitalWrite(IN1, HIGH);  // Forward direction
+    digitalWrite(IN2, LOW);   // Forward direction
+    analogWrite(enable, 255);  // Full speed
+    motorRunning = true;  // Mark motor as running
+  }
+
+  // Monitor encoder ticks
+  if (EncValue >= fullRotationTicks) {
+    // Stop the motor after one full rotation
+    digitalWrite(IN1, LOW);  // Stop motor
+    digitalWrite(IN2, LOW);  // Stop motor
+    analogWrite(enable, 0);  // Stop PWM signal
+    motorRunning = false;  // Mark motor as stopped
+    
+    // Print the number of ticks made for one full rotation
+    Serial.print("Motor completed 1 full rotation. Total ticks: ");
+    Serial.println(EncValue);
+
+    // Wait before restarting (or do something else)
+    delay(1000);  // Wait for 1 second before re-running the process (or reset if needed)
+    EncValue = 0;  // Reset encoder count for next rotation
+  }
+
+  // Optionally, display the encoder value every 100ms
+  Serial.println(EncValue);
+  delay(100);
+}
+
+void updateEnc() {
+  // Update encoder count on every rising edge of C1
+  if (digitalRead(C1) > digitalRead(C2))
+    EncValue++;  // Increment for one direction
+  else
+    EncValue--;  // Decrement for the opposite direction
+}
+
+
+
+
+
+//----------------------------------------------------------
 #define C1 18
 #define C2 21
 #define IN1 27
