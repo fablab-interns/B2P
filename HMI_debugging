@@ -1,3 +1,42 @@
+#define C1 18
+#define C2 21
+#define IN1 27
+#define IN2 26
+#define enable 25 // enable used for?
+
+volatile long EncValue=0;
+
+void setup(){
+
+  pinMode(IN1, OUTPUT);
+  pinMode(IN2, OUTPUT);
+  pinMode(enable, OUTPUT);
+  pinMode(C1, INPUT);
+  pinMode(C2, INPUT);
+  attachInterrupt(digitalPinToInterrupt(C1), updateEnc, RISING);
+  Serial.begin(115200);
+
+}
+
+void loop(){
+
+  digitalWrite(IN1, HIGH);
+  digitalWrite(IN2, LOW);
+  analogWrite(enable, 255);
+  Serial.println(EncValue);
+  delay(100);
+}
+
+void updateEnc(){
+  if(digitalRead(C1) > digitalRead(C2))
+  EncValue++;
+  else
+  EncValue--;
+}
+
+
+
+// -----------------------------------------------------------------------------------------------------------------------
 #define MotFwd  19  // Motor Forward pin
 #define MotRev  21  // Motor Reverse pin
 
