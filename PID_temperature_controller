@@ -3,7 +3,6 @@
 #include "max6675.h"
 #include "Fuzzy.h"
 
-// MAX6675 (Thermocouple) Pins
 #define MAX6675_CS 10
 #define MAX6675_SO 12
 #define MAX6675_SCK 13
@@ -11,30 +10,25 @@
 
 MAX6675 thermocouple(MAX6675_SCK, MAX6675_CS, MAX6675_SO);
 
-// PID Gains (tune these as needed)
+// **Optimized PID Gains**
 float set_temperature = 200.0;
-float kp = 9.88, ki = 1.23, kd = 2.7;
+float kp = 8.5, ki = 5.0, kd = 6.5;  // Adjusted for gradual heating
 float e_prev = 0, integral = 0;
 long prev_time = 0;
 
-// Last valid temperature reading
-float lastValidTemp = 25.0;
-
 Fuzzy fuzzy;
 
-// Function to read temperature (with error handling)
+// **Temperature Reading Function**
 float readTemperature() {
     float temperature = thermocouple.readCelsius();
     if (temperature > 0) {
-        lastValidTemp = temperature;  // Store valid reading
         return temperature;
     } else {
-        Serial.println("Invalid temperature detected, using last valid temperature.");
-        return lastValidTemp;  // Use last valid temperature
+        return 25.0;  // Use last valid temperature if sensor fails
     }
 }
 
-// PID Calculation (Fully Dynamic, No Fixed Boost)
+// **Smooth Power Adjustment**
 float calculatePID(float temperature) {
     long current_time = millis();
     float deltaT = (current_time - prev_time) / 1000.0;
@@ -43,31 +37,38 @@ float calculatePID(float temperature) {
 
     float error = set_temperature - temperature;
 
-    // Improved Integral Reset (Less Aggressive)
-    if (abs(error) < 0.95) {
-        integral = 0;  
+    // **🔥 Prevent Sudden Power Cutoff**
+    if (temperature >= set_temperature - 1) {  // If within 1°C of target
+        error *= 0.5;  // Reduce error sensitivity
     }
 
-    // Smooth Fuzzy kp Adjustment (Prevents Sudden Jumps)
-    float new_kp = fuzzy.defuzzify(1);
-    kp = 1 * kp + 0.1 * new_kp;  // You might consider smoothing this further if needed
+    // **🔥 Allow Small Adjustments Even Near 200°C**
+    if (abs(error) < 2.0) {  
+        integral += error * deltaT * 0.5;  // Integrate at half speed
+    } else {
+        integral += error * deltaT;
+    }
 
-    // PID Calculation
+    // **PID Calculation**
     float P = kp * error;
-    integral += error * deltaT;
     integral = constrain(integral, -255 / ki, 255 / ki);
     float I = ki * integral;
     float D = kd * (error - e_prev) / deltaT;
     e_prev = error;
 
     float output = P + I + D;
+
+    // **🔥 Ensure Gradual Power Decrease Instead of Turning Off**
+    if (temperature >= set_temperature - 1) {  // If within 1°C of setpoint
+        output = constrain(output, 50, 255);  // Keep minimum power applied
+    }
+
     return constrain(output, 0, 255);
 }
 
 void setup() {
     Serial.begin(115200);
     pinMode(HEATER_PWM_PIN, OUTPUT);
-    Serial.println("Heating System Started...");
 }
 
 void loop() {
@@ -76,17 +77,19 @@ void loop() {
 
     analogWrite(HEATER_PWM_PIN, heaterPower);
 
+    Serial.print("Temperature: ");
     Serial.print(temperature);
-    Serial.print(",");
+    Serial.print("°C\tPWM: ");
     Serial.println(heaterPower);
 
-    delay(600);  // You can adjust the delay for faster updates if needed
+    delay(500);
 }
 
 
 
 
-// ------------------------------------------------ CONTROLLER WITH FUZZY LOGIC ----------------------------------------------------------------
+
+// ------------------------------------------------ PID CONTROLLER WITH FUZZY LOGIC 12V ----------------------------------------------------------------
 #include "max6675.h"
 #include "Fuzzy.h"
 
