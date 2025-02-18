@@ -8,85 +8,97 @@
 #define MAX6675_SCK 13
 #define HEATER_PWM_PIN 3
 
-// System Constants
-const float SET_TEMPERATURE = 200.0;
-const int SAMPLE_TIME = 100;  // Reduced sample time to 100ms for faster response
-
-// PID Parameters - More aggressive tuning
-float kp = 25.0;   // Increased for faster response
-float ki = 0.15;   // Reduced to prevent integral windup
-float kd = 40.0;   // Increased for better damping
-
-// Control Variables
-float lastTemp = 0;
-float integral = 0;
-float lastError = 0;
-unsigned long lastTime = 0;
-
 MAX6675 thermocouple(MAX6675_SCK, MAX6675_CS, MAX6675_SO);
 
+// PID Gains (Initial values, tune as needed)
+float set_temperature = 200.0;
+float kp = 9.88, ki = 1.23, kd = 2.7;  // Start with these, then retune
+float e_prev = 0, integral = 0;
+long prev_time = 0;
+
+// Last valid temperature reading
+float lastValidTemp = 25.0;
+
+// Moving average filter for temperature readings
+#define FILTER_SIZE 5
+float tempBuffer[FILTER_SIZE];
+uint8_t index = 0;
+
+Fuzzy fuzzy;
+
+// Function to read temperature (with error handling and filtering)
 float readTemperature() {
-    float temp = thermocouple.readCelsius();
-    return (temp > 0) ? temp : lastTemp;
+    float temperature = thermocouple.readCelsius();
+    if (temperature > 0) {
+        tempBuffer[index] = temperature;
+        index = (index + 1) % FILTER_SIZE;
+        float avg = 0;
+        for (uint8_t i = 0; i < FILTER_SIZE; i++) {
+            avg += tempBuffer[i];
+        }
+        lastValidTemp = avg / FILTER_SIZE;  // Store filtered temperature
+        return lastValidTemp;
+    } else {
+        Serial.println(" Invalid temperature detected, using last valid temperature.");
+        return lastValidTemp;  // Use last valid temperature
+    }
 }
 
-float calculatePID(float currentTemp) {
-    unsigned long now = millis();
-    float deltaTime = (now - lastTime) / 1000.0;
-    if (deltaTime <= 0) deltaTime = 0.1;
-    
-    // Calculate error
-    float error = SET_TEMPERATURE - currentTemp;
-    
-    // Proportional term
-    float P = kp * error;
-    
-    // Integral term with anti-windup
-    integral += (ki * error * deltaTime);
-    integral = constrain(integral, -40, 40);  // Limit integral term
-    float I = integral;
-    
-    // Derivative term on measurement, not error
-    float dTemp = (currentTemp - lastTemp) / deltaTime;
-    float D = -kd * dTemp;  // Negative because we want to resist change
-    
-    // Calculate output with direct mapping to PWM range
-    float output = P + I + D;
-    
-    // Update stored values
-    lastTemp = currentTemp;
-    lastTime = now;
-    
-    // Map output to PWM range with deadband elimination
-    if (abs(output) < 5) output = 0;  // Small deadband to prevent noise
-    output = constrain(output, 0, 255);
-    
-    return output;
+// PID Calculation with Anti-Windup and Fuzzy Logic Adjustment
+float calculatePID(float temperature) {
+    long current_time = millis();
+    float deltaT = (current_time - prev_time) / 1000.0;
+    prev_time = current_time;
+    deltaT = max(deltaT, 0.001);  // Avoid division by zero
+
+    float error = set_temperature - temperature;
+
+    // Anti-Windup: Reset integral if output saturates
+    float output = kp * error + ki * integral + kd * (error - e_prev) / deltaT;
+    if (output >= 255) {
+        integral = (255 - kp * error - kd * (error - e_prev) / deltaT) / ki;
+    } else if (output <= 0) {
+        integral = (-kp * error - kd * (error - e_prev) / deltaT) / ki;
+    } else {
+        integral += error * deltaT;  // Normal integral accumulation
+    }
+
+    // Smooth Fuzzy kp Adjustment (Prevents Sudden Jumps)
+    float new_kp = fuzzy.defuzzify(1);
+    kp = 0.9 * kp + 0.1 * new_kp;  // Smooth transition for kp
+
+    e_prev = error;
+    return constrain(output, 0, 255);
 }
 
 void setup() {
     Serial.begin(115200);
     pinMode(HEATER_PWM_PIN, OUTPUT);
-    analogWrite(HEATER_PWM_PIN, 0);
-    delay(1000);  // Stabilization delay
-    Serial.println("Temperature,Output,Error");
+
+    // Increase PWM frequency for Pin 3 (Heater) to ~31kHz
+    TCCR3B = (TCCR3B & 0xF8) | 0x01;
+
+    // Initialize temperature buffer
+    for (uint8_t i = 0; i < FILTER_SIZE; i++) {
+        tempBuffer[i] = lastValidTemp;
+    }
+
+    Serial.println(" Heating System Started...");
 }
 
 void loop() {
     float temperature = readTemperature();
-    float output = calculatePID(temperature);
-    
-    // Apply control signal
-    analogWrite(HEATER_PWM_PIN, output);
-    
-    // Debug output
+    float heaterPower = calculatePID(temperature);
+
+    analogWrite(HEATER_PWM_PIN, heaterPower);
+
+    // Serial output for debugging
+    Serial.print("Temperature: ");
     Serial.print(temperature);
-    Serial.print(",");
-    Serial.print(output);
-    Serial.print(",");
-    Serial.println(SET_TEMPERATURE - temperature);
-    
-    delay(SAMPLE_TIME);
+    Serial.print(", Heater Power: ");
+    Serial.println(heaterPower);
+
+    delay(200);  // Faster updates for better control
 }
 
 
