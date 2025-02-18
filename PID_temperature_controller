@@ -9,129 +9,84 @@
 #define HEATER_PWM_PIN 3
 
 // System Constants
-const float PWM_FREQUENCY = 490;  // Arduino Mega default PWM frequency
-const float MIN_DUTY_CYCLE = 0.15; // Minimum duty cycle to ensure proper switching
-const float MAX_DUTY_CYCLE = 0.95; // Maximum duty cycle to prevent overheating
-const float MAX_TEMP_CHANGE_RATE = 5.0; // °C per second
+const float SET_TEMPERATURE = 200.0;
+const int SAMPLE_TIME = 100;  // Reduced sample time to 100ms for faster response
 
-// PID Parameters
-float set_temperature = 200.0;
-float kp = 5.0;    // Reduced for stability
-float ki = 0.6;    // Reduced for less oscillation
-float kd = 4.0;    // Increased for better damping
+// PID Parameters - More aggressive tuning
+float kp = 25.0;   // Increased for faster response
+float ki = 0.15;   // Reduced to prevent integral windup
+float kd = 40.0;   // Increased for better damping
 
 // Control Variables
-float e_prev = 0;
+float lastTemp = 0;
 float integral = 0;
-float last_output = 0;
-float last_temp = 0;
-float lastValidTemp = 25.0;
-float last_derivative = 0;
-float max_change_rate = 20;
-long prev_time = 0;
+float lastError = 0;
 unsigned long lastTime = 0;
 
 MAX6675 thermocouple(MAX6675_SCK, MAX6675_CS, MAX6675_SO);
-Fuzzy fuzzy;
 
-// Function to read temperature with error handling
 float readTemperature() {
-    float temperature = thermocouple.readCelsius();
-    if (temperature > 0) {
-        lastValidTemp = temperature;
-        return temperature;
-    } else {
-        Serial.println("Invalid temperature detected, using last valid temperature.");
-        return lastValidTemp;
-    }
+    float temp = thermocouple.readCelsius();
+    return (temp > 0) ? temp : lastTemp;
 }
 
-// Enhanced PID calculation with all modifications
-float calculatePID(float temperature) {
-    long current_time = millis();
-    float deltaT = (current_time - prev_time) / 1000.0;
-    prev_time = current_time;
-    if (deltaT == 0) deltaT = 0.1;
+float calculatePID(float currentTemp) {
+    unsigned long now = millis();
+    float deltaTime = (now - lastTime) / 1000.0;
+    if (deltaTime <= 0) deltaTime = 0.1;
     
-    float error = set_temperature - temperature;
+    // Calculate error
+    float error = SET_TEMPERATURE - currentTemp;
     
-    // Improved integral reset
-    if (abs(error) < 0.95) {
-        integral = 0;
-    }
-    
-    // Derivative filtering
-    float derivative = (error - e_prev) / deltaT;
-    derivative = 0.7 * derivative + 0.3 * last_derivative;  // Low-pass filter
-    last_derivative = derivative;
-    
-    // Smooth Fuzzy kp Adjustment
-    float new_kp = fuzzy.defuzzify(1);
-    kp = 0.9 * kp + 0.1 * new_kp;
-    
-    // PID Calculation
+    // Proportional term
     float P = kp * error;
-    integral += error * deltaT;
-    integral = constrain(integral, -255/ki, 255/ki);
-    float I = ki * integral;
-    float D = kd * derivative;
     
-    e_prev = error;
+    // Integral term with anti-windup
+    integral += (ki * error * deltaTime);
+    integral = constrain(integral, -40, 40);  // Limit integral term
+    float I = integral;
+    
+    // Derivative term on measurement, not error
+    float dTemp = (currentTemp - lastTemp) / deltaTime;
+    float D = -kd * dTemp;  // Negative because we want to resist change
+    
+    // Calculate output with direct mapping to PWM range
     float output = P + I + D;
     
-    // Scale output to compensate for non-linear MOSFET response
-    output = pow(output/255.0, 1.2) * 255.0;
+    // Update stored values
+    lastTemp = currentTemp;
+    lastTime = now;
     
-    // Apply minimum and maximum duty cycle constraints
-    if (output > 0) {
-        output = map(output, 0, 255, 
-                    MIN_DUTY_CYCLE * 255, 
-                    MAX_DUTY_CYCLE * 255);
-    }
+    // Map output to PWM range with deadband elimination
+    if (abs(output) < 5) output = 0;  // Small deadband to prevent noise
+    output = constrain(output, 0, 255);
     
-    // Rate limiting
-    float output_change = output - last_output;
-    output_change = constrain(output_change, -max_change_rate, max_change_rate);
-    output = last_output + output_change;
-    last_output = output;
-    
-    return constrain(output, 0, 255);
+    return output;
 }
 
 void setup() {
     Serial.begin(115200);
     pinMode(HEATER_PWM_PIN, OUTPUT);
-    Serial.println("Enhanced Heating System Started...");
+    analogWrite(HEATER_PWM_PIN, 0);
+    delay(1000);  // Stabilization delay
+    Serial.println("Temperature,Output,Error");
 }
 
 void loop() {
     float temperature = readTemperature();
-    
-    // Monitor temperature change rate
-    float deltaT = (millis() - lastTime) / 1000.0;
-    float temp_change_rate = abs(temperature - last_temp) / deltaT;
-    
-    // Calculate heater power
-    float heaterPower = calculatePID(temperature);
-    
-    // Reduce power if temperature is changing too quickly
-    if (temp_change_rate > MAX_TEMP_CHANGE_RATE) {
-        heaterPower *= 0.8;
-    }
+    float output = calculatePID(temperature);
     
     // Apply control signal
-    analogWrite(HEATER_PWM_PIN, heaterPower);
+    analogWrite(HEATER_PWM_PIN, output);
     
     // Debug output
     Serial.print(temperature);
     Serial.print(",");
-    Serial.println(heaterPower);
+    Serial.print(output);
+    Serial.print(",");
+    Serial.println(SET_TEMPERATURE - temperature);
     
-    // Update historical values
-    last_temp = temperature;
-    lastTime = millis();
-    
-    delay(600); // Sampling period
+    delay(SAMPLE_TIME);
 }
 
 
