@@ -10,9 +10,9 @@
 
 MAX6675 thermocouple(MAX6675_SCK, MAX6675_CS, MAX6675_SO);
 
-// PID Gains (Initial values, tune as needed)
+// PID Gains (Adjusted values)
 float set_temperature = 200.0;
-float kp = 13.18, ki = 7.03, kd = 19.7;  // Start with these, then retune
+float kp = 5.0, ki = 0.5, kd = 5.0;  // Retuned gains
 float e_prev = 0, integral = 0;
 long prev_time = 0;
 
@@ -63,9 +63,9 @@ float calculatePID(float temperature) {
         integral += error * deltaT;  // Normal integral accumulation
     }
 
-    // Smooth Fuzzy kp Adjustment (Prevents Sudden Jumps)
+    // Smooth Fuzzy kp Adjustment (Reduced impact)
     float new_kp = fuzzy.defuzzify(1);
-    kp = 0.9 * kp + 0.1 * new_kp;  // Smooth transition for kp
+    kp = 0.95 * kp + 0.05 * new_kp;  // Smoother transition for kp
 
     e_prev = error;
     return constrain(output, 0, 255);
@@ -98,7 +98,7 @@ void loop() {
     Serial.print(", Heater Power: ");
     Serial.println(heaterPower);
 
-    delay(200);  // Faster updates for better control
+    delay(100);  // Faster updates for better control
 }
 
 
