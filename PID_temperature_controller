@@ -12,7 +12,7 @@ MAX6675 thermocouple(MAX6675_SCK, MAX6675_CS, MAX6675_SO);
 
 // PID Gains (Initial values, tune as needed)
 float set_temperature = 200.0;
-float kp = 9.88, ki = 1.23, kd = 2.7;  // Start with these, then retune
+float kp = 13.18, ki = 7.03, kd = 19.7;  // Start with these, then retune
 float e_prev = 0, integral = 0;
 long prev_time = 0;
 
