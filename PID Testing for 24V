@@ -1,102 +1,82 @@
 // for testing-------------------------------------------------
-#include "max6675.h"
-#include "Fuzzy.h"
+#include <SPI.h>
+#include <PID_v1.h>
 
-// MAX6675 (Thermocouple) Pins
-#define MAX6675_CS 10
-#define MAX6675_SO 12
-#define MAX6675_SCK 13
-#define HEATER_PWM_PIN 3
+// MAX6675 connections
+const int thermoDO = 12;
+const int thermoCS = 10;
+const int thermoCLK = 13;
 
-MAX6675 thermocouple(MAX6675_SCK, MAX6675_CS, MAX6675_SO);
+// Heater control pin
+const int heaterPin = 3;
 
-// PID Gains (Adjusted values)
-float set_temperature = 200.0;
-float kp = 5.0, ki = 0.5, kd = 5.0;  // Retuned gains
-float e_prev = 0, integral = 0;
-long prev_time = 0;
+// PID parameters
+double setpoint = 100.0; // Desired temperature in Celsius
+double input = 0.0;      // Current temperature
+double output = 0.0;     // PID output
 
-// Last valid temperature reading
-float lastValidTemp = 25.0;
+// PID tuning parameters
+double Kp = 2.0;
+double Ki = 5.0;
+double Kd = 1.0;
 
-// Moving average filter for temperature readings
-#define FILTER_SIZE 5
-float tempBuffer[FILTER_SIZE];
-uint8_t index = 0;
-
-Fuzzy fuzzy;
-
-// Function to read temperature (with error handling and filtering)
-float readTemperature() {
-    float temperature = thermocouple.readCelsius();
-    if (temperature > 0) {
-        tempBuffer[index] = temperature;
-        index = (index + 1) % FILTER_SIZE;
-        float avg = 0;
-        for (uint8_t i = 0; i < FILTER_SIZE; i++) {
-            avg += tempBuffer[i];
-        }
-        lastValidTemp = avg / FILTER_SIZE;  // Store filtered temperature
-        return lastValidTemp;
-    } else {
-        Serial.println(" Invalid temperature detected, using last valid temperature.");
-        return lastValidTemp;  // Use last valid temperature
-    }
-}
-
-// PID Calculation with Anti-Windup and Fuzzy Logic Adjustment
-float calculatePID(float temperature) {
-    long current_time = millis();
-    float deltaT = (current_time - prev_time) / 1000.0;
-    prev_time = current_time;
-    deltaT = max(deltaT, 0.001);  // Avoid division by zero
-
-    float error = set_temperature - temperature;
-
-    // Anti-Windup: Reset integral if output saturates
-    float output = kp * error + ki * integral + kd * (error - e_prev) / deltaT;
-    if (output >= 255) {
-        integral = (255 - kp * error - kd * (error - e_prev) / deltaT) / ki;
-    } else if (output <= 0) {
-        integral = (-kp * error - kd * (error - e_prev) / deltaT) / ki;
-    } else {
-        integral += error * deltaT;  // Normal integral accumulation
-    }
-
-    // Smooth Fuzzy kp Adjustment (Reduced impact)
-    float new_kp = fuzzy.defuzzify(1);
-    kp = 0.95 * kp + 0.05 * new_kp;  // Smoother transition for kp
-
-    e_prev = error;
-    return constrain(output, 0, 255);
-}
+// Create PID instance
+PID myPID(&input, &output, &setpoint, Kp, Ki, Kd, DIRECT);
 
 void setup() {
-    Serial.begin(115200);
-    pinMode(HEATER_PWM_PIN, OUTPUT);
+  // Initialize serial communication
+  Serial.begin(9600);
 
-    // Increase PWM frequency for Pin 3 (Heater) to ~31kHz
-    TCCR3B = (TCCR3B & 0xF8) | 0x01;
+  // Initialize MAX6675
+  pinMode(thermoCS, OUTPUT);
+  digitalWrite(thermoCS, HIGH);
+  SPI.begin();
 
-    // Initialize temperature buffer
-    for (uint8_t i = 0; i < FILTER_SIZE; i++) {
-        tempBuffer[i] = lastValidTemp;
-    }
+  // Initialize heater control pin
+  pinMode(heaterPin, OUTPUT);
 
-    Serial.println(" Heating System Started...");
+  // Set PWM frequency for heaterPin (D3) to ~980 Hz (default for pins 3 and 11)
+  // No need to change TCCR2B register as default is already set to 64 prescaler
+
+  // Initialize PID controller
+  myPID.SetMode(AUTOMATIC);
+  myPID.SetOutputLimits(0, 255); // PWM output limits
 }
 
 void loop() {
-    float temperature = readTemperature();
-    float heaterPower = calculatePID(temperature);
+  // Read temperature from MAX6675
+  input = readThermocouple();
 
-    analogWrite(HEATER_PWM_PIN, heaterPower);
+  // Compute PID output
+  myPID.Compute();
 
-    // Serial output for debugging
-    Serial.print("Temperature: ");
-    Serial.print(temperature);
-    Serial.print(", Heater Power: ");
-    Serial.println(heaterPower);
+  // Apply PID output to heater using PWM
+  analogWrite(heaterPin, output);
 
-    delay(100);  // Faster updates for better control
+  // Debugging: print current temperature and PID output
+  Serial.print("Temperature: ");
+  Serial.print(input);
+  Serial.print(" °C, PID Output: ");
+  Serial.println(output);
+
+  // Add a short delay before the next loop iteration
+  delay(1000);
+}
+
+// Function to read temperature from MAX6675
+double readThermocouple() {
+  digitalWrite(thermoCS, LOW);
+  delayMicroseconds(10);
+
+  uint16_t v = SPI.transfer16(0x00);
+
+  digitalWrite(thermoCS, HIGH);
+
+  if (v & 0x4) {
+    // Bit 2 indicates if the thermocouple is open
+    return NAN;
+  }
+
+  v >>= 3; // Discard the lowest 3 bits
+  return v * 0.25;
 }
