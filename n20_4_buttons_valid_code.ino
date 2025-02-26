@@ -15,23 +15,20 @@
 #define BUTTON_INCREMENT_PIN 11
 #define BUTTON_TOGGLE_PIN 12
 
-// Constants
-const int CPR = 28;                     // Encoder counts per revolution
-const int STEPS_PER_ROTATION = 4 * CPR;  // Steps for 4 rotations
-const int FIXED_STEPS = 380;             // Predefined forward steps
-int motorSpeed = 150;                    // Motor speed (0-255)
-
 // Variables
 volatile long encoderCount = 0;
-long targetSteps = 0;
-bool motorRunning = false;
-bool motorDirection = true;  // true = forward, false = backward
+const int CPR = 28;                   // Counts per revolution (7 PPR * 4 quadrature steps)
+const int incrementSteps = 1 * CPR;    // Steps per increment
+int motorSpeed = 150;                  // Motor speed (0 to 255)
+bool motorRunning = false;              // Tracks if the motor is running
+long targetSteps = 0;                   // Total steps updated when incrementing or decrementing
+long lastExecutedSteps = 0;             // Stores last executed step count
 
 // Button instances
-Bounce decrementButton = Bounce();
+Bounce decreaseBackwardButton = Bounce();
 Bounce incrementButton = Bounce();
+Bounce decrementButton = Bounce();
 Bounce toggleButton = Bounce();
-Bounce backwardButton = Bounce();
 
 void setup() {
   Serial.begin(115200);
@@ -40,7 +37,7 @@ void setup() {
   pinMode(IN1, OUTPUT);
   pinMode(IN2, OUTPUT);
   pinMode(ENA, OUTPUT);
-  stopMotor();  // Ensure motor is stopped at start
+  stopMotor();
 
   // Encoder setup
   pinMode(ENCODER_C1, INPUT);
@@ -56,65 +53,72 @@ void setup() {
   incrementButton.attach(BUTTON_INCREMENT_PIN);
   decrementButton.attach(BUTTON_DECREMENT_PIN);
   toggleButton.attach(BUTTON_TOGGLE_PIN);
-  backwardButton.attach(BUTTON_DECREASE_BACKWARD_PIN);
+  decreaseBackwardButton.attach(BUTTON_DECREASE_BACKWARD_PIN);
 
-  incrementButton.interval(50);
-  decrementButton.interval(50);
-  toggleButton.interval(50);
-  backwardButton.interval(50);
+  incrementButton.interval(25);
+  decrementButton.interval(25);
+  toggleButton.interval(25);
+  decreaseBackwardButton.interval(25);
 }
 
 void loop() {
   incrementButton.update();
   decrementButton.update();
   toggleButton.update();
-  backwardButton.update();
+  decreaseBackwardButton.update();
 
-  // Increment button: increase steps forward
+  // ✅ When Increment is Pressed → Increase Steps and Save Last Executed Steps
   if (incrementButton.fell() && !motorRunning) {
-    targetSteps += STEPS_PER_ROTATION;
     Serial.println("Increment Button Pressed");
-    startMotor(true);
+    targetSteps += incrementSteps;
+    lastExecutedSteps = targetSteps;  // Store last valid step count
+    Serial.print("Updated Steps: ");
+    Serial.println(targetSteps);
+    executeMotorMovement();
   }
 
-  // Decrement button: decrease forward steps
+  // ✅ When Decrement is Pressed → Decrease Steps and Save Last Executed Steps
   if (decrementButton.fell() && !motorRunning) {
-    if (targetSteps >= STEPS_PER_ROTATION) {
-      targetSteps -= STEPS_PER_ROTATION;
-      Serial.println("Decrement Button Pressed");
-      if (targetSteps > 0) startMotor(true);
+    Serial.println("Decrement Button Pressed");
+
+    if (targetSteps >= incrementSteps) {
+      targetSteps -= incrementSteps;
+      lastExecutedSteps = targetSteps;  // Store last valid step count
+      Serial.print("Updated Steps: ");
+      Serial.println(targetSteps);
+      executeMotorMovement();
+    } else {
+      Serial.println("Cannot Decrease Below Zero");
     }
   }
 
-  // Toggle button: run a fixed number of steps
+  // ✅ Toggle Button → Repeat Last Executed Step Count
   if (toggleButton.fell()) {
-    if (motorRunning) {
+    if (!motorRunning) {
+      Serial.println("Toggle Button Pressed: Repeating Last Movement");
+      targetSteps = lastExecutedSteps;  // Use last executed steps
+      executeMotorMovement();
+    } else {
       stopMotor();
       Serial.println("Motor Stopped via Toggle");
-    } else {
-      targetSteps = FIXED_STEPS;
-      Serial.println("Toggle Button Pressed: Moving Forward");
-      startMotor(true);
     }
   }
 
-  // Backward button: move in reverse while pressed
-  if (backwardButton.read() == LOW && !motorRunning) {
+  // ✅ Decrease Backward Button: Move Motor Backward While Pressed
+  if (decreaseBackwardButton.read() == LOW && !motorRunning) {
     Serial.println("Backward Button Pressed - Moving Backward");
-    startMotor(false);
-  } else if (motorRunning && backwardButton.read() == HIGH) {
+    moveBackwardsContinuous();
+  } else if (motorRunning && decreaseBackwardButton.read() == HIGH) {
     stopMotor();
     Serial.println("Motor Stopped after Backward Release");
   }
 }
 
-// Function to start motor movement
-void startMotor(bool forward) {
+// ✅ Function to Execute Motor Movement
+void executeMotorMovement() {
   encoderCount = 0;
-  motorDirection = forward;
-
-  digitalWrite(IN1, forward ? LOW : HIGH);
-  digitalWrite(IN2, forward ? HIGH : LOW);
+  digitalWrite(IN1, LOW);  // Forward direction
+  digitalWrite(IN2, HIGH);
   analogWrite(ENA, motorSpeed);
   motorRunning = true;
 
@@ -125,9 +129,18 @@ void startMotor(bool forward) {
   }
 
   stopMotor();
+  Serial.println("Motor Stopped after Target Rotations");
 }
 
-// Function to stop the motor
+// ✅ Function to Move Motor Backward While Button is Held
+void moveBackwardsContinuous() {
+  digitalWrite(IN1, HIGH);
+  digitalWrite(IN2, LOW);
+  analogWrite(ENA, motorSpeed);
+  motorRunning = true;
+}
+
+// ✅ Function to Stop the Motor
 void stopMotor() {
   analogWrite(ENA, 0);
   digitalWrite(IN1, LOW);
@@ -135,7 +148,7 @@ void stopMotor() {
   motorRunning = false;
 }
 
-// Encoder interrupt function
+// ✅ Encoder Interrupt to Track Steps
 void readEncoder() {
   static int lastState = LOW;
   int stateC1 = digitalRead(ENCODER_C1);
