@@ -3,7 +3,7 @@
 #define C2 21
 #define IN1 27
 #define IN2 26
-#define enable 25 // enable used for?
+#define enable 25 // 
 
 volatile long EncValue = 0;  // Variable to track the number of encoder ticks
 const long fullRotationTicks = 700;  // Number of ticks for one full motor shaft rotation (based on your motor specs)
