@@ -1,0 +1,216 @@
+/* Implemented n20-DC motor:
+    - speed control
+    - CPR control - number of steps
+
+- Issues to be fixed:
+    - when toggle button pressed only then the motor rotates
+    - CPR is initially 0 and when increased the motor should rotate but it does not untill toggle is pressed
+    - no mater the change in speed the motor rotates the same 
+*/
+
+
+#include <Adafruit_GFX.h>
+#include <Adafruit_ST7789.h>
+#include <SPI.h>
+#include <Bounce2.h>
+
+// Display Pins
+#define TFT_MOSI  19
+#define TFT_SCLK  18
+#define TFT_CS    5
+#define TFT_DC    16
+#define TFT_RST   23
+#define TFT_BL    4
+
+// Button Pins
+#define MENU_BUTTON    21
+#define INCREASE_BUTTON 0
+#define DECREASE_BUTTON 35
+#define TOGGLE_BUTTON 33
+
+// Motor Pins
+#define IN1 25
+#define IN2 26
+#define ENA 22
+
+// Encoder Pins
+#define ENC_C1 38
+#define ENC_C2 37
+
+// PWM Settings
+#define PWM_FREQ 1000
+#define PWM_RES 8
+#define PWM_CHANNEL 0
+
+// Motor Control Variables
+volatile long encoderCount = 0;
+const int CPR = 28;
+const int incrementSteps = 1 * CPR;
+int motorSpeed = 40; // Start speed at 40
+bool motorRunning = false;
+long targetSteps = 0;
+
+// Display
+Adafruit_ST7789 tft = Adafruit_ST7789(TFT_CS, TFT_DC, TFT_MOSI, TFT_SCLK, TFT_RST);
+
+// Menu Variables
+const char* menuItems[] = {"M1: Speed", "M2: Steps", "Enc: "};
+int menuIndex = 0;
+int speed = 40;
+int steps = 0;
+int lastSpeed = -1;
+int lastSteps = -1;
+int lastMenuIndex = -1;
+
+// Button Debounce
+Bounce incrementButton = Bounce();
+Bounce decrementButton = Bounce();
+Bounce toggleButton = Bounce();
+Bounce menuButton = Bounce();
+
+void setup() {
+    Serial.begin(115200);
+    
+    pinMode(TFT_BL, OUTPUT);
+    digitalWrite(TFT_BL, HIGH);
+
+    pinMode(MENU_BUTTON, INPUT_PULLUP);
+    pinMode(INCREASE_BUTTON, INPUT_PULLUP);
+    pinMode(DECREASE_BUTTON, INPUT_PULLUP);
+    pinMode(TOGGLE_BUTTON, INPUT_PULLUP);
+
+    menuButton.attach(MENU_BUTTON);
+    incrementButton.attach(INCREASE_BUTTON);
+    decrementButton.attach(DECREASE_BUTTON);
+    toggleButton.attach(TOGGLE_BUTTON);
+    menuButton.interval(25);
+    incrementButton.interval(25);
+    decrementButton.interval(25);
+    toggleButton.interval(25);
+
+    pinMode(IN1, OUTPUT);
+    pinMode(IN2, OUTPUT);
+    
+    ledcAttachChannel(ENA, PWM_FREQ, PWM_RES, PWM_CHANNEL);
+    ledcWrite(ENA, 0);
+    
+    digitalWrite(IN1, LOW);
+    digitalWrite(IN2, LOW);
+    
+    pinMode(ENC_C1, INPUT);
+    pinMode(ENC_C2, INPUT);
+    attachInterrupt(digitalPinToInterrupt(ENC_C1), readEncoder, CHANGE);
+    
+    tft.init(135, 240);
+    tft.setRotation(1);
+    tft.fillScreen(ST77XX_BLACK);
+    updateMenu();
+    updateValues();
+}
+
+void loop() {
+    menuButton.update();
+    incrementButton.update();
+    decrementButton.update();
+    toggleButton.update();
+
+    if (menuButton.fell()) {
+        menuIndex = (menuIndex + 1) % 3;
+        updateMenu();
+    }
+
+    if (incrementButton.fell()) {
+        if (menuIndex == 0) { // If speed adjustment is selected
+            motorSpeed++;
+            speed++;
+            updateValues();
+        } else if (!motorRunning) {
+            targetSteps += incrementSteps;
+            updateValues();
+        }
+    }
+
+    if (decrementButton.fell()) {
+        if (menuIndex == 0 && motorSpeed > 0) { // Adjust speed with lower limit
+            motorSpeed--;
+            speed--;
+            updateValues();
+        } else if (!motorRunning) {
+            if (targetSteps >= incrementSteps) {
+                targetSteps -= incrementSteps;
+            }
+            updateValues();
+        }
+    }
+
+    if (toggleButton.fell()) {
+        if (!motorRunning) {
+            executeMotorMovement();
+        } else {
+            stopMotor();
+        }
+    }
+}
+
+void executeMotorMovement() {
+    encoderCount = 0;
+    digitalWrite(IN1, LOW);
+    digitalWrite(IN2, HIGH);
+    ledcWrite(ENA, motorSpeed);
+    motorRunning = true;
+
+    while (encoderCount < targetSteps) {
+        Serial.print("Encoder Count: ");
+        Serial.println(encoderCount);
+        delay(10);
+    }
+
+    stopMotor();
+}
+
+void stopMotor() {
+    ledcWrite(ENA, 0);
+    digitalWrite(IN1, LOW);
+    digitalWrite(IN2, LOW);
+    motorRunning = false;
+    updateValues();
+}
+
+void readEncoder() {
+    static int lastState = LOW;
+    int stateC1 = digitalRead(ENC_C1);
+    int stateC2 = digitalRead(ENC_C2);
+
+    if (stateC1 != lastState) {
+        encoderCount += (stateC1 == stateC2) ? 1 : -1;
+    }
+    lastState = stateC1;
+}
+
+void updateMenu() {
+    if (menuIndex == lastMenuIndex) return;
+    tft.setTextSize(2);
+    for (int i = 0; i < 3; i++) {
+        tft.setCursor(10, 20 + (i * 30));
+        tft.setTextColor(i == menuIndex ? ST77XX_GREEN : ST77XX_WHITE, ST77XX_BLACK);
+        tft.println(menuItems[i]);
+    }
+    lastMenuIndex = menuIndex;
+}
+
+void updateValues() {
+    if (speed != lastSpeed) {
+        tft.fillRect(120, 20, 100, 20, ST77XX_BLACK);
+        tft.setCursor(120, 20);
+        tft.setTextColor(ST77XX_GREEN);
+        tft.printf(" %d", speed);
+        lastSpeed = speed;
+    }
+    if (targetSteps != lastSteps) {
+        tft.fillRect(120, 50, 100, 20, ST77XX_BLACK);
+        tft.setCursor(120, 50);
+        tft.setTextColor(ST77XX_GREEN);
+        tft.printf(" %ld", targetSteps);
+        lastSteps = targetSteps;
+    }
+}
