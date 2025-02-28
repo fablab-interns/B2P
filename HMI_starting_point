@@ -1,491 +1,143 @@
-// to calculate the number of pulses per rotation
-#define C1 18
-#define C2 21
-#define IN1 27
-#define IN2 26
-#define enable 25 // 
+/* this is starting point code, with basic structure
+  --> display initiated 
+  --> created menu with three variables, speed, speed2, and temperature
+  --> three buttons, scrolling through the menu. increasing and decreasing the value.
+  --> faster refresh rate usig updateMenu() and updateVariables() functions to update just changed things instead of entire screen.
+*/
 
-volatile long EncValue = 0;  // Variable to track the number of encoder ticks
-const long fullRotationTicks = 700;  // Number of ticks for one full motor shaft rotation (based on your motor specs)
-bool motorRunning = false;  // Flag to track if the motor is still running
+#include <Adafruit_GFX.h>    
+#include <Adafruit_ST7789.h> 
+#include <SPI.h>
+
+// Display Pins
+#define TFT_MOSI  19
+#define TFT_SCLK  18
+#define TFT_CS    5
+#define TFT_DC    16
+#define TFT_RST   23
+#define TFT_BL    4
+
+// Button Pins
+#define MENU_BUTTON    21   // Button to scroll through the menu
+#define INCREASE_BUTTON 0   // Button to increase the value
+#define DECREASE_BUTTON 35  // Button to decrease the value
+
+
+// Initialize display
+Adafruit_ST7789 tft = Adafruit_ST7789(TFT_CS, TFT_DC, TFT_MOSI, TFT_SCLK, TFT_RST);
+
+// Menu items and variables
+const char* menuItems[] = {"M1: Speed", "M2: Speed", "Temp: "};
+int menuIndex = 0;
+int speed = 150;
+int speed2 = 0;
+int temperature = 0;
+bool buttonPressed = false;
+
+// Previous values to track changes and prevent unnecessary updates
+int lastSpeed = -1;
+int lastSpeed2 = -1;
+int lastTemperature = -1;
+int lastMenuIndex = -1;
 
 void setup() {
-  pinMode(IN1, OUTPUT);
-  pinMode(IN2, OUTPUT);
-  pinMode(enable, OUTPUT);
-  pinMode(C1, INPUT);
-  pinMode(C2, INPUT);
-  
-  attachInterrupt(digitalPinToInterrupt(C1), updateEnc, RISING);  // Attach interrupt to C1 for encoder ticks
-  Serial.begin(115200);  // Start serial communication
+    Serial.begin(9600);
+
+    pinMode(TFT_BL, OUTPUT);
+    digitalWrite(TFT_BL, HIGH);
+
+    pinMode(MENU_BUTTON, INPUT_PULLUP);
+    pinMode(INCREASE_BUTTON, INPUT_PULLUP);
+    pinMode(DECREASE_BUTTON, INPUT_PULLUP);  
+
+    tft.init(135, 240);
+    tft.setRotation(1);  // Landscape mode
+
+    tft.fillScreen(ST77XX_BLACK);  // Clear screen only once
+    updateMenu();  // Display initial menu selection
+    updateValues();  // Display initial values
 }
 
 void loop() {
-  // Start motor in forward direction
-  if (!motorRunning) {
-    digitalWrite(IN1, HIGH);  // Forward direction
-    digitalWrite(IN2, LOW);   // Forward direction
-    analogWrite(enable, 255);  // Full speed
-    motorRunning = true;  // Mark motor as running
-  }
+    handleButtons();
+}
 
-  // Monitor encoder ticks
-  if (EncValue >= fullRotationTicks) {
-    // Stop the motor after one full rotation
-    digitalWrite(IN1, LOW);  // Stop motor
-    digitalWrite(IN2, LOW);  // Stop motor
-    analogWrite(enable, 0);  // Stop PWM signal
-    motorRunning = false;  // Mark motor as stopped
+void handleButtons() {
+    // Menu button: Change menu selection
+    if (digitalRead(MENU_BUTTON) == LOW && !buttonPressed) {
+        menuIndex = (menuIndex + 1) % 3;  // Cycle through menu items
+        buttonPressed = true;
+        updateMenu();  // Only update menu text (no flickering)
+        delay(10);
+    }
     
-    // Print the number of ticks made for one full rotation
-    Serial.print("Motor completed 1 full rotation. Total ticks: ");
-    Serial.println(EncValue);
-
-    // Wait before restarting (or do something else)
-    delay(1000);  // Wait for 1 second before re-running the process (or reset if needed)
-    EncValue = 0;  // Reset encoder count for next rotation
-  }
-
-  // Optionally, display the encoder value every 100ms
-  Serial.println(EncValue);
-  delay(100);
-}
-
-void updateEnc() {
-  // Update encoder count on every rising edge of C1
-  if (digitalRead(C1) > digitalRead(C2))
-    EncValue++;  // Increment for one direction
-  else
-    EncValue--;  // Decrement for the opposite direction
-}
-
-
-
-
-
-//----------------------------------------------------------
-#define C1 18
-#define C2 21
-#define IN1 27
-#define IN2 26
-#define enable 25 // enable used for?
-
-volatile long EncValue=0;
-
-void setup(){
-
-  pinMode(IN1, OUTPUT);
-  pinMode(IN2, OUTPUT);
-  pinMode(enable, OUTPUT);
-  pinMode(C1, INPUT);
-  pinMode(C2, INPUT);
-  attachInterrupt(digitalPinToInterrupt(C1), updateEnc, RISING);
-  Serial.begin(115200);
-
-}
-
-void loop(){
-
-  digitalWrite(IN1, HIGH);
-  digitalWrite(IN2, LOW);
-  analogWrite(enable, 255);
-  Serial.println(EncValue);
-  delay(100);
-}
-
-void updateEnc(){
-  if(digitalRead(C1) > digitalRead(C2))
-  EncValue++;
-  else
-  EncValue--;
-}
-
-
-
-// -----------------------------------------------------------------------------------------------------------------------
-#define MotFwd  19  // Motor Forward pin
-#define MotRev  21  // Motor Reverse pin
-
-#define ButtonInc  32  // Increment button pin
-#define ButtonDec  33  // Decrement button pin
-
-int lastButtonIncState = HIGH;  // Previous state of increment button
-int lastButtonDecState = HIGH;  // Previous state of decrement button
-
-unsigned long lastDebounceTimeInc = 0;  // Last debounce time for increment button
-unsigned long lastDebounceTimeDec = 0;  // Last debounce time for decrement button
-unsigned long debounceDelay = 50;  // Debounce delay (in milliseconds)
-
-void setup() {
-  pinMode(MotFwd, OUTPUT); 
-  pinMode(MotRev, OUTPUT); 
-  Serial.begin(9600); // Initialize serial communication
-
-  pinMode(ButtonInc, INPUT_PULLUP);  // Set increment button pin as input with pull-up resistor
-  pinMode(ButtonDec, INPUT_PULLUP);  // Set decrement button pin as input with pull-up resistor
-
-  // Initially, motor should be off
-  digitalWrite(MotFwd, LOW);
-  digitalWrite(MotRev, LOW);
-}
-
-void loop() {
-  // Read the state of the increment button
-  int readingInc = digitalRead(ButtonInc);
-
-  // Check if the increment button has been pressed (LOW because of INPUT_PULLUP)
-  if (readingInc == LOW && lastButtonIncState == HIGH && (millis() - lastDebounceTimeInc) > debounceDelay) {
-    moveForward();  // Move forward for a certain amount of time
-    lastDebounceTimeInc = millis();  // Record the time of the press
-  }
-
-  // Read the state of the decrement button
-  int readingDec = digitalRead(ButtonDec);
-
-  // Check if the decrement button has been pressed (LOW because of INPUT_PULLUP)
-  if (readingDec == LOW && lastButtonDecState == HIGH && (millis() - lastDebounceTimeDec) > debounceDelay) {
-    moveBackward();  // Move backward for a certain amount of time
-    lastDebounceTimeDec = millis();  // Record the time of the press
-  }
-
-  // Store the current button states for the next loop iteration
-  lastButtonIncState = readingInc;
-  lastButtonDecState = readingDec;
-
-  // Print motor status for debugging
-  Serial.print("Motor is: ");
-  if (digitalRead(MotFwd) == HIGH) {
-    Serial.println("Forward");
-  } else if (digitalRead(MotRev) == HIGH) {
-    Serial.println("Reverse");
-  } else {
-    Serial.println("Stopped");
-  }
-
-  delay(100); // Small delay for stability
-}
-
-// Move motor forward for a set time (adjust the time to control distance)
-void moveForward() {
-  Serial.println("Moving Forward");
-  digitalWrite(MotFwd, HIGH);  // Turn motor forward
-  digitalWrite(MotRev, LOW);   // Ensure reverse is off
-
-  delay(1000);  // Move forward for 1 second (adjust this as needed)
-  
-  digitalWrite(MotFwd, LOW);   // Stop the motor
-  Serial.println("Motor Stopped after Moving Forward");
-}
-
-// Move motor backward for a set time (adjust the time to control distance)
-void moveBackward() {
-  Serial.println("Moving Backward");
-  digitalWrite(MotFwd, LOW);   // Ensure forward is off
-  digitalWrite(MotRev, HIGH);  // Turn motor in reverse
-
-  delay(1000);  // Move backward for 1 second (adjust this as needed)
-  
-  digitalWrite(MotRev, LOW);   // Stop the motor
-  Serial.println("Motor Stopped after Moving Backward");
-}
-
-
-
-
-
-// ---------------------------------------------------------
-
-#define MotFwd  19  // Motor Forward pin
-#define MotRev  21  // Motor Reverse pin
-
-#define ButtonInc  32  // Increment button pin
-#define ButtonDec  33  // Decrement button pin
-
-int encoderPin1 = 18; // Encoder Output 'A' (connected to interrupt pin)
-int encoderPin2 = 5;  // Encoder Output 'B' (connected to interrupt pin)
-
-volatile int lastEncoded = 0; // Stores previous state of encoder
-volatile long encoderValue = 0; // Raw encoder value (counts pulses)
-
-unsigned long lastDebounceTimeInc = 0;  // Last debounce time for increment button
-unsigned long lastDebounceTimeDec = 0;  // Last debounce time for decrement button
-unsigned long debounceDelay = 50;  // Debounce delay (in milliseconds)
-
-int motorSpeedRPM = 60;  // Motor speed in RPM (change this value to set desired speed)
-int peakCountPerRevolution = 1000; // Number of encoder pulses per revolution
-unsigned long timePerPeak;  // Time per peak in microseconds
-
-void setup() {
-  pinMode(MotFwd, OUTPUT); 
-  pinMode(MotRev, OUTPUT); 
-  Serial.begin(9600); // Initialize serial communication
-
-  pinMode(ButtonInc, INPUT_PULLUP);  // Set increment button pin as input with pull-up resistor
-  pinMode(ButtonDec, INPUT_PULLUP);  // Set decrement button pin as input with pull-up resistor
-
-  // Initially, motor should be off
-  digitalWrite(MotFwd, LOW);
-  digitalWrite(MotRev, LOW);
-
-  // Calculate time per peak based on the desired RPM
-  timePerPeak = (60 * 1000000) / (motorSpeedRPM * peakCountPerRevolution);
-  Serial.print("Time per peak: ");
-  Serial.println(timePerPeak);  // Print the time per peak to the Serial Monitor for debugging
-}
-
-void loop() {
-  // Read the state of the increment button
-  int readingInc = digitalRead(ButtonInc);
-
-  // Check if the increment button has been pressed (LOW because of INPUT_PULLUP)
-  if (readingInc == LOW && (millis() - lastDebounceTimeInc) > debounceDelay) {
-    motorSpeedRPM += 10;  // Increase speed by 10 RPM
-    timePerPeak = (60 * 1000000) / (motorSpeedRPM * peakCountPerRevolution);
-    lastDebounceTimeInc = millis();  // Record the time of the press
-    Serial.print("Motor speed increased to: ");
-    Serial.println(motorSpeedRPM);
-  }
-
-  // Read the state of the decrement button
-  int readingDec = digitalRead(ButtonDec);
-
-  // Check if the decrement button has been pressed (LOW because of INPUT_PULLUP)
-  if (readingDec == LOW && (millis() - lastDebounceTimeDec) > debounceDelay) {
-    motorSpeedRPM -= 10;  // Decrease speed by 10 RPM
-    if (motorSpeedRPM < 0) motorSpeedRPM = 0;  // Prevent going below 0 RPM
-    timePerPeak = (60 * 1000000) / (motorSpeedRPM * peakCountPerRevolution);
-    lastDebounceTimeDec = millis();  // Record the time of the press
-    Serial.print("Motor speed decreased to: ");
-    Serial.println(motorSpeedRPM);
-  }
-
-  // Control the motor speed based on RPM
-  moveMotorAtSpeed();
-
-  delay(100); // Small delay for stability
-}
-
-// Move motor at the calculated speed
-void moveMotorAtSpeed() {
-  // Turn motor forward
-  digitalWrite(MotFwd, HIGH);  
-  digitalWrite(MotRev, LOW);   
-
-  // Wait for the calculated time per peak to control the speed (RPM)
-  delayMicroseconds(timePerPeak);  // Delay between each peak to control speed
-
-  // Update encoder value (simulate a pulse from the encoder)
-  encoderValue++;
-
-  // Stop motor after a full revolution (1000 peaks)
-  if (encoderValue >= peakCountPerRevolution) {
-    digitalWrite(MotFwd, LOW);  // Stop motor
-    encoderValue = 0;  // Reset encoder value for next revolution
-    Serial.println("Motor stopped after one full revolution");
-  }
-}
-
-
-
-
-
-// ----------------------------------------------------------------------------
-#include <Bounce2.h>
-
-// Motor control pins (Change according to ESP32 GPIO pins)
-#define IN1 19
-#define IN2 21
-#define ENA 21
-
-// Encoder pins (Change according to ESP32 GPIO pins)
-#define ENCODER_C1 18
-#define ENCODER_C2 5
-
-// Button pins (Change according to ESP32 GPIO pins)
-#define BUTTON_DECREASE_BACKWARD_PIN 35  // New button to decrease the motor position
-#define BUTTON_DECREMENT_PIN 33
-#define BUTTON_INCREMENT_PIN 32
-#define BUTTON_TOGGLE_PIN 34  // The toggle button
-
-// Variables
-int fixedForwardSteps = 400;  // for cca 4 mm overlap
-volatile long encoderCount = 0;  // Tracks the encoder count
-const int CPR = 28;             // Counts per revolution (7 PPR * 4 quadrature steps)
-const int incrementSteps = 1 * CPR;  // Encoder counts for 4 shaft rotations
-const int motorSpeed = 150;     // Motor speed (0 to 255)
-bool motorRunning = false;      // Tracks if the motor is running
-long targetSteps = 0;           // Total encoder counts to reach (updated with each increment/decrement)
-
-// Button instances
-Bounce decreaseBackwardButton = Bounce();  // New button instance for decrease backward
-Bounce incrementButton = Bounce();
-Bounce decrementButton = Bounce();
-Bounce toggleButton = Bounce();
-
-void setup() {
-  // Motor pins
-  pinMode(IN1, OUTPUT);
-  pinMode(IN2, OUTPUT);
-  pinMode(ENA, OUTPUT);
-
-  // Encoder pins
-  pinMode(ENCODER_C1, INPUT);
-  pinMode(ENCODER_C2, INPUT);
-
-  // Button pins
-  pinMode(BUTTON_DECREASE_BACKWARD_PIN, INPUT_PULLUP);  // Setup for the new backward button
-  pinMode(BUTTON_INCREMENT_PIN, INPUT_PULLUP);
-  pinMode(BUTTON_DECREMENT_PIN, INPUT_PULLUP);
-  pinMode(BUTTON_TOGGLE_PIN, INPUT_PULLUP);
-
-  // Initialize the Bounce objects
-  decreaseBackwardButton.attach(BUTTON_DECREASE_BACKWARD_PIN);  // Attach new backward button
-  decreaseBackwardButton.interval(25); // Debounce interval for decrease backward button
-
-  incrementButton.attach(BUTTON_INCREMENT_PIN);
-  incrementButton.interval(25); // Debounce interval for increment button
-
-  decrementButton.attach(BUTTON_DECREMENT_PIN);
-  decrementButton.interval(25); // Debounce interval for decrement button
-
-  toggleButton.attach(BUTTON_TOGGLE_PIN);
-  toggleButton.interval(25); // Debounce interval for toggle button
-
-  // Initially ensure motor is stopped
-  ledcWrite(0, 0);
-  digitalWrite(IN1, LOW);
-  digitalWrite(IN2, LOW);
-
-  // Attach encoder interrupt
-  attachInterrupt(digitalPinToInterrupt(ENCODER_C1), readEncoder, CHANGE);
-
-  // Start serial communication
-  Serial.begin(115200);
-}
-
-void loop() {
-  // Update button states
-  decreaseBackwardButton.update();  // Update the new backward button state
-  incrementButton.update();
-  decrementButton.update();
-  toggleButton.update();
-
-  // Increment button logic: Add 4 shaft rotations to the target
-  if (incrementButton.fell() && !motorRunning) {
-    Serial.println("Increment Button Pressed");
-
-    // Add 4 rotations to the target
-    targetSteps += incrementSteps;
-    Serial.println("steps:");
-    Serial.println(targetSteps);
-
-    executeMotorMovement();
-  }
-  
-  // Decrement button logic: Subtract 4 shaft rotations from the target or move backward
-  if (decrementButton.fell() && !motorRunning) {
-    Serial.println("Decrement Button Pressed");
-
-    // Subtract 4 rotations, ensuring target doesn't go below 0
-    if (targetSteps >= incrementSteps) {
-      targetSteps -= incrementSteps;
-      if (targetSteps > 0) {
-        executeMotorMovement();
-      } else {
-        Serial.println("No Rotations Set (Target = 0)");
-      }
-    } else {
-      Serial.println("Cannot Decrease Below Zero Rotations");
+    // Increase button: Modify selected value
+    if (digitalRead(INCREASE_BUTTON) == LOW && !buttonPressed) {
+        if (menuIndex == 0) speed += 1;
+        else if (menuIndex == 1) speed2 += 1;
+        else if (menuIndex == 2) temperature += 50;
+        buttonPressed = true;
+        updateValues();  // Only update numbers (no flickering)
+        delay(10);
     }
-  }
-
-  // Toggle button logic: Start/stop the motor with a fixed target forward
-  if (toggleButton.fell()) {
-    if (!motorRunning) {
-      // When toggle is pressed, start moving the motor forward for a fixed number of encoder counts
-      targetSteps = fixedForwardSteps;  // Set target to 350 encoder counts
-      Serial.println("Toggle Button Pressed: Moving Forward for Fixed Steps");
-
-      // Execute motor movement to the target
-      executeMotorMovement();
-    } else {
-      // If the motor is already running, stop it
-      stopMotor();
-      Serial.println("Motor Stopped via Toggle");
+    
+    // Decrease button: Modify selected value
+    if (digitalRead(DECREASE_BUTTON) == LOW && !buttonPressed) {
+        if (menuIndex == 0) speed -= 1;
+        else if (menuIndex == 1) speed2 -= 1;
+        else if (menuIndex == 2) temperature -= 50;
+        buttonPressed = true;
+        updateValues();  // Only update numbers (no flickering)
+        delay(10);
     }
-  }
-
-  // Decrease backward button logic: Move motor backward while the button is pressed
-  if (decreaseBackwardButton.read() == LOW) {  // If the button is pressed
-    if (!motorRunning) {  // Only start the motor if it's not already running
-      Serial.println("Decrease Backward Button Pressed - Moving Motor Backward");
-      moveBackwardsContinuous();  // Start moving backward
+    
+    // Reset buttonPressed state when buttons are released
+    if (digitalRead(INCREASE_BUTTON) == HIGH && digitalRead(DECREASE_BUTTON) == HIGH && digitalRead(MENU_BUTTON) == HIGH) {
+        buttonPressed = false;
     }
-  } else {  // If the button is released
-    if (motorRunning) {
-      stopMotor();  // Stop the motor immediately after release
-      Serial.println("Motor Stopped after Button Released");
-    }
-  }
 }
 
-// Function to execute motor movement to target steps
-void executeMotorMovement() {
-  encoderCount = 0;  // Reset encoder count
-  digitalWrite(IN1, LOW);  // Forward direction
-  digitalWrite(IN2, HIGH);
-  ledcWrite(0, motorSpeed);  // Set motor speed using PWM
-  motorRunning = true;
+// Function to update the menu labels (without affecting values)
+void updateMenu() {
+    if (menuIndex == lastMenuIndex) return; // Skip if menu didn't change
 
-  // Wait until the target steps are reached
-  while (encoderCount < targetSteps) {
-    Serial.print("Encoder Count: ");
-    Serial.println(encoderCount);
-    delay(10);  // Small delay to allow encoder to update
-  }
+    tft.setTextSize(2);
 
-  // Stop the motor after completing the target
-  stopMotor();
-  Serial.println("Motor Stopped after Target Rotations");
-}
-
-// Function to move the motor backward continuously while the button is pressed
-void moveBackwardsContinuous() {
-  digitalWrite(IN1, HIGH);  // Reverse direction
-  digitalWrite(IN2, LOW);
-  ledcWrite(0, motorSpeed);  // Set motor speed using PWM
-  motorRunning = true;  // Indicate that the motor is running
-
-  // Print encoder count while moving backward
-  Serial.print("Reversing - Encoder Count: ");
-  Serial.println(encoderCount);
-
-  // Small delay to allow encoder to update
-  delay(10);
-}
-
-// Function to stop the motor
-void stopMotor() {
-  ledcWrite(0, 0);
-  digitalWrite(IN1, LOW);
-  digitalWrite(IN2, LOW);
-  motorRunning = false;
-}
-
-// Encoder interrupt function to update encoder count
-void readEncoder() {
-  static int lastState = LOW;
-  int stateC1 = digitalRead(ENCODER_C1);
-  int stateC2 = digitalRead(ENCODER_C2);
-
-  if (stateC1 != lastState) {
-    if (stateC1 == stateC2) {
-      encoderCount++;
-    } else {
-      encoderCount--;
+    for (int i = 0; i < 3; i++) {
+        tft.setCursor(10, 20 + (i * 30));
+        if (i == menuIndex) {
+            tft.setTextColor(ST77XX_GREEN, ST77XX_BLACK);
+        } else {
+            tft.setTextColor(ST77XX_WHITE, ST77XX_BLACK);
+        }
+        tft.println(menuItems[i]);  // Print only the menu name (no values)
     }
-    Serial.print("Interrupt: Encoder Count = ");
-    Serial.println(encoderCount);  // Debugging print
-  }
-  lastState = stateC1;
+    lastMenuIndex = menuIndex;
+}
+
+// Function to update only the numeric values (prevents flickering)
+void updateValues() {
+    if (speed != lastSpeed) {
+        tft.fillRect(120, 20, 100, 20, ST77XX_BLACK); // Clear only the number area
+        tft.setCursor(120, 20);
+        tft.setTextColor(ST77XX_GREEN);
+        tft.printf(" %d", speed);
+        lastSpeed = speed;
+    }
+
+    if (speed2 != lastSpeed2) {
+        tft.fillRect(120, 50, 100, 20, ST77XX_BLACK);
+        tft.setCursor(120, 50);
+        tft.setTextColor(ST77XX_GREEN);
+        tft.printf(" %d", speed2);
+        lastSpeed2 = speed2;
+    }
+
+    if (temperature != lastTemperature) {
+        tft.fillRect(70, 80, 100, 20, ST77XX_BLACK);
+        tft.setCursor(70, 80);
+        tft.setTextColor(ST77XX_GREEN);
+        tft.printf(" %dC", temperature);
+        lastTemperature = temperature;
+    }
 }
