@@ -23,39 +23,78 @@ void loop() {
 --------------------------------------------
 const int relayPin = 6;       // Pin controlling the relay
 const int switchPin = 7;      // Pin connected to the switch
-int switchState = HIGH;       // Variable to store the switch state
-int lastSwitchState = HIGH;   // Variable to store the last switch state
-unsigned long lastDebounceTime = 0;  // The last time the output was toggled
-unsigned long debounceDelay = 50;    // The debounce time; increase if needed
+bool relayActive = false;     // Flag to track if relay is active
+unsigned long relayStartTime; // To store when the relay was activated
 
 void setup() {
   pinMode(relayPin, OUTPUT);        // Set relay pin as output
   pinMode(switchPin, INPUT_PULLUP); // Set switch pin as input with internal pull-up resistor
-  digitalWrite(relayPin, LOW);      // Initially, the relay is off
+  digitalWrite(relayPin, LOW);      // Ensure relay is off at startup
+  delay(100);                       // Short delay for system stabilization
 }
 
 void loop() {
-  int reading = digitalRead(switchPin); // Read the state of the switch
+  static unsigned long lastDebounceTime = 0;
+  static int lastSwitchState = HIGH;
+  int switchState = digitalRead(switchPin);
 
-  // Check if the switch state has changed
-  if (reading != lastSwitchState) {
-    lastDebounceTime = millis(); // Reset the debouncing timer
+  // Debounce logic
+  if (switchState != lastSwitchState) {
+    lastDebounceTime = millis();
   }
 
-  // If the state has been stable for longer than the debounce delay, take it as the actual state
-  if ((millis() - lastDebounceTime) > debounceDelay) {
-    // Check if the button state has changed
-    if (reading != switchState) {
-      switchState = reading;
-
-      // Only act if the new state is LOW (button pressed)
-      if (switchState == LOW) {
-        digitalWrite(relayPin, HIGH);  // Turn on the relay (power the load)
-        delay(10000);                  // Wait for 10 seconds
-        digitalWrite(relayPin, LOW);   // Turn off the relay (cut power to load)
-      }
+  if ((millis() - lastDebounceTime) > 50) { // 50ms debounce delay
+    if (switchState == LOW && !relayActive) {
+      relayActive = true;
+      relayStartTime = millis();
+      digitalWrite(relayPin, HIGH);
     }
   }
 
-  lastSwitchState = reading; // Update the last switch state
+  // Check if 10 seconds have passed
+  if (relayActive && (millis() - relayStartTime >= 10000)) {
+    relayActive = false;
+    digitalWrite(relayPin, LOW);
+  }
+
+  lastSwitchState = switchState;
 }
+const int relayPin = 6;       // Pin controlling the relay
+const int switchPin = 7;      // Pin connected to the switch
+bool relayActive = false;     // Flag to track if relay is active
+unsigned long relayStartTime; // To store when the relay was activated
+
+void setup() {
+  pinMode(relayPin, OUTPUT);        // Set relay pin as output
+  pinMode(switchPin, INPUT_PULLUP); // Set switch pin as input with internal pull-up resistor
+  digitalWrite(relayPin, LOW);      // Ensure relay is off at startup
+  delay(100);                       // Short delay for system stabilization
+}
+
+void loop() {
+  static unsigned long lastDebounceTime = 0;
+  static int lastSwitchState = HIGH;
+  int switchState = digitalRead(switchPin);
+
+  // Debounce logic
+  if (switchState != lastSwitchState) {
+    lastDebounceTime = millis();
+  }
+
+  if ((millis() - lastDebounceTime) > 50) { // 50ms debounce delay
+    if (switchState == LOW && !relayActive) {
+      relayActive = true;
+      relayStartTime = millis();
+      digitalWrite(relayPin, HIGH);
+    }
+  }
+
+  // Check if 10 seconds have passed
+  if (relayActive && (millis() - relayStartTime >= 10000)) {
+    relayActive = false;
+    digitalWrite(relayPin, LOW);
+  }
+
+  lastSwitchState = switchState;
+}
+
