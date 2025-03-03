@@ -1,5 +1,3 @@
-
---------------------------------------------
 const int relayPin = 6;       // Pin controlling the relay
 const int switchPin = 7;      // Pin connected to the switch
 bool relayActive = false;     // Flag to track if relay is active
