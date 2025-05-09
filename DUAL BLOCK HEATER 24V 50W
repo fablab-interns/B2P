@@ -118,6 +118,9 @@ void loop() {
 
 // ------------------------------------------------------------------------------ DUAL HEATER SEPARATE FUZZY LOGIC (SEPARATE BRAIN) ----------------------------------------------------------------------------
 
+// not tested yet, the fuzzy logic is upgraded to actually use readings and calculate the best kp values to keep the system steady
+// curently setup busy, waiting for Bakir to finish setting up everything
+
 #include "max6675.h"
 #include "Fuzzy.h"
 
