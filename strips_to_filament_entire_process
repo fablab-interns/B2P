@@ -27,10 +27,10 @@
 #define ENA 17
 
 // Button pins configurations
-#define MENU_BUTTON     21  // green 
-#define INCREASE_BUTTON  15 // red
-#define DECREASE_BUTTON 2 // blue
-#define START_STOP_DC_BUTTON 22 // yellow
+#define MENU_BUTTON     2  // blue 
+#define INCREASE_BUTTON  21 // red
+#define DECREASE_BUTTON 22 // yellow
+#define START_STOP_DC_BUTTON 15 // green
 
 
 // Stepper Motor Control Structures
