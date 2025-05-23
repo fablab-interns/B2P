@@ -120,6 +120,132 @@ void loop() {
 
 
 
+// ------------------------------------------------------- DUAL HEATER PID CONTROLLER TWO SET TEMPERATURES----------------------------------------------------
+
+#include "max6675.h"
+#include "Fuzzy.h"
+
+// === Shared SPI Pins ===
+#define MAX6675_SO 23
+#define MAX6675_SCK 22
+
+// === Heater 1 Configuration ===
+#define MAX6675_CS1 26
+#define HEATER1_PWM_PIN 3
+
+// === Heater 2 Configuration ===
+#define MAX6675_CS2 24
+#define HEATER2_PWM_PIN 5
+
+// === Thermocouple Objects ===
+MAX6675 thermocouple1(MAX6675_SCK, MAX6675_CS1, MAX6675_SO);
+MAX6675 thermocouple2(MAX6675_SCK, MAX6675_CS2, MAX6675_SO);
+
+// === Setpoints ===
+float set_temperature1 = 250.0; // Heater 1 setpoint
+float set_temperature2 = 230.0; // Heater 2 setpoint
+
+// === PID + Fuzzy for Heater 1 ===
+float kp1 = 11.90, ki1 = 3.86, kd1 = 6.5;
+float e_prev1 = 0, integral1 = 0;
+unsigned long prev_time1 = 0;
+float lastValidTemp1 = 25.0;
+Fuzzy fuzzy1;
+
+// === PID + Fuzzy for Heater 2 ===
+float kp2 = 15.9, ki2 = 1.54, kd2 = 19.98;
+float e_prev2 = 0, integral2 = 0;
+unsigned long prev_time2 = 0;
+float lastValidTemp2 = 25.0;
+Fuzzy fuzzy2;
+
+// === Timing Variables ===
+unsigned long lastReadTime1 = 0;
+unsigned long lastReadTime2 = 0;
+const unsigned long readInterval = 250; // 250 milliseconds
+
+// === Temperature Reading with Fallback ===
+float readTemperature(MAX6675 &sensor, float &lastValid) {
+    float temp = sensor.readCelsius();
+    if (temp > 0) {
+        lastValid = temp;
+        return temp;
+    } else {
+        Serial.println("Invalid temperature detected, using last valid value.");
+        return lastValid;
+    }
+}
+
+// === PID Function per Heater ===
+float calculatePID(float temperature, float setpoint, float &e_prev, float &integral, unsigned long &prev_time,
+                   float &kp, float ki, float kd, Fuzzy &fuzzyController, bool useFuzzy = false) {
+    unsigned long current_time = millis();
+    float deltaT = (current_time - prev_time) / 1000.0;
+    prev_time = current_time;
+    if (deltaT == 0) deltaT = 0.1;
+
+    float error = setpoint - temperature;
+
+    if (abs(error) < 0.45) {
+        integral = 0;
+    }
+
+    if (useFuzzy) {
+        float new_kp = fuzzyController.defuzzify(1);
+        kp = 1.02 * kp + 0.1 * new_kp;
+    }
+
+    float P = kp * error;
+    integral += error * deltaT;
+    integral = constrain(integral, -255 / ki, 255 / ki);
+    float I = ki * integral;
+    float D = kd * (error - e_prev) / deltaT;
+    e_prev = error;
+
+    float output = P + I + D;
+    return constrain(output, 0, 255);
+}
+
+void setup() {
+    Serial.begin(115200);
+    pinMode(HEATER1_PWM_PIN, OUTPUT);
+    pinMode(HEATER2_PWM_PIN, OUTPUT);
+    Serial.println("Dual Heater PID System Started...");
+}
+
+void loop() {
+    unsigned long currentMillis = millis();
+
+    // Heater 1
+    if (currentMillis - lastReadTime1 >= readInterval) {
+        lastReadTime1 = currentMillis;
+        float temperature1 = readTemperature(thermocouple1, lastValidTemp1);
+        float heaterPower1 = calculatePID(temperature1, set_temperature1, e_prev1, integral1, prev_time1, kp1, ki1, kd1, fuzzy1, true);
+        analogWrite(HEATER1_PWM_PIN, heaterPower1);
+        Serial.print("Heater1 Temp: "); Serial.print(temperature1);
+        Serial.print(" °C, Power: "); Serial.println(heaterPower1);
+    }
+
+    // Heater 2
+    if (currentMillis - lastReadTime2 >= readInterval) {
+        lastReadTime2 = currentMillis;
+        float temperature2 = readTemperature(thermocouple2, lastValidTemp2);
+        float heaterPower2 = calculatePID(temperature2, set_temperature2, e_prev2, integral2, prev_time2, kp2, ki2, kd2, fuzzy2, true);
+        analogWrite(HEATER2_PWM_PIN, heaterPower2);
+        Serial.print("Heater2 Temp: "); Serial.print(temperature2);
+        Serial.print(" °C, Power: "); Serial.println(heaterPower2);
+    }
+
+    
+}
+
+
+
+
+
+
+
+
 
 
 
