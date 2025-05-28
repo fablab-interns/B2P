@@ -1,13 +1,13 @@
 
-// CODE FOR ENTIRE SYSTEM STRIPS TO FILAMENT 
-// ADDITIONALLY FIX TEXT POSITIONS AND WIRE EVERYTHING UP
-
 #include <Adafruit_GFX.h>
 #include <Adafruit_ST7789.h>
 #include <SPI.h>
 #include <Fonts/FreeMono9pt7b.h>
+#include <menu.h>
+#include <menuIO/TFT_eSPIOut.h>
+#include <TFT_eSPI.h>
+#include <Button2.h>
 
-// Display Configuration
 #define TFT_MOSI   19
 #define TFT_SCLK   18
 #define TFT_CS      5
@@ -15,25 +15,20 @@
 #define TFT_RST    23
 #define TFT_BL      4
 
-// Stepper motor pins configurations
 #define M1_STEP   33
 #define M1_DIR    25
 #define M2_STEP   26
 #define M2_DIR    27
 
-// DC Motor configurations
 #define IN1 12
 #define IN2 13
 #define ENA 17
 
-// Button pins configurations
-#define MENU_BUTTON     2  // blue 
-#define INCREASE_BUTTON  21 // red
-#define DECREASE_BUTTON 22 // yellow
-#define START_STOP_DC_BUTTON 15 // green
+#define MENU_BUTTON     21
+#define INCREASE_BUTTON  15
+#define DECREASE_BUTTON 2
+#define START_STOP_DC_BUTTON 22
 
-
-// Stepper Motor Control Structures
 struct MotorState {
   unsigned long lastStepTime = 0;
   bool stepState = LOW;
@@ -41,63 +36,53 @@ struct MotorState {
   bool running = false;
 };
 
-// Button State Structure 
 struct ButtonState {
   unsigned long lastPress = 0;
   bool pressed = false;
 };
 
-// Global States
 MotorState m1, m2;
 ButtonState menuBtn, incBtn, decBtn, startStopBtn;
 int motorSpeed1 = 4000, motorSpeed2 = 4000;
-bool m1Direction = true, m2Direction = true;
-int dcSpeed = 150; // 0 - 255
-bool dcDirection = true;
+bool m1Direction = false, m2Direction = true;
+int dcSpeed = 150;
+bool dcDirection = false;
 bool dcRunning = false;
 
-// Display Interface
 Adafruit_ST7789 tft = Adafruit_ST7789(TFT_CS, TFT_DC, TFT_MOSI, TFT_SCLK, TFT_RST);
 const char* menuItems[] = {"M1 Speed", "M1 Dir", "M2 Speed", "M2 Dir", "DC Speed", "DC Dir"};
 int menuIndex = 0;
 int lastMenuIndex = -1;
 int lastSpeed1 = -1, lastSpeed2 = -1, lastDCSpeed = -1;
-bool lastM1Dir = !m1Direction; 
+bool lastM1Dir = !m1Direction;
 bool lastM2Dir = !m2Direction;
 bool lastDCDir = !dcDirection;
 bool lastDCRun = !dcRunning;
 
-// PWM config
 const int pwmFreq = 5000;
 const int pwmChannel = 0;
 const int pwmResolution = 8;
 
-
 void setup() {
   Serial.begin(115200);
-  
-  // Display Setup
   pinMode(TFT_BL, OUTPUT);
   digitalWrite(TFT_BL, HIGH);
   tft.init(135, 240);
-  tft.setRotation(1);
+  tft.setRotation(3);
   tft.fillScreen(ST77XX_BLACK);
   tft.setFont(&FreeMono9pt7b);
-  
-  // Stepper Motor Pins
+
   pinMode(M1_STEP, OUTPUT);
   pinMode(M1_DIR, OUTPUT);
   pinMode(M2_STEP, OUTPUT);
   pinMode(M2_DIR, OUTPUT);
-  
-  // DC Motor Pins
+
   pinMode(IN1, OUTPUT);
   pinMode(IN2, OUTPUT);
   pinMode(ENA, OUTPUT);
   ledcAttachChannel(ENA, pwmFreq, pwmResolution, pwmChannel);
   ledcWrite(ENA, 0);
 
-  // Button Pins
   pinMode(MENU_BUTTON, INPUT_PULLUP);
   pinMode(INCREASE_BUTTON, INPUT_PULLUP);
   pinMode(DECREASE_BUTTON, INPUT_PULLUP);
@@ -108,32 +93,25 @@ void setup() {
 
 void loop() {
   unsigned long frameStart = micros();
-  
   handleMotor(m1, M1_DIR, m1Direction, M1_STEP, motorSpeed1);
   handleMotor(m2, M2_DIR, m2Direction, M2_STEP, motorSpeed2);
   processButtons();
   updateDCMotor();
   updateDisplay();
-  
-  // Maintain 1kHz loop frequency
-  while(micros() - frameStart < 1000); 
+  while(micros() - frameStart < 1000);
 }
 
-void handleMotor(MotorState &motor, uint8_t dirPin, bool &direction, 
-                uint8_t stepPin, int &speed) {
+void handleMotor(MotorState &motor, uint8_t dirPin, bool &direction, uint8_t stepPin, int &speed) {
   digitalWrite(dirPin, direction);
-  
   if(!motor.running && motor.stepsQueued < 200) {
     motor.stepsQueued = 200;
     motor.running = true;
   }
-
   if(motor.running) {
     unsigned long now = micros();
     if(now - motor.lastStepTime >= speed) {
       motor.stepState = !motor.stepState;
       digitalWrite(stepPin, motor.stepState);
-      
       if(motor.stepState == LOW) {
         if(--motor.stepsQueued <= 0) {
           motor.running = false;
@@ -147,8 +125,6 @@ void handleMotor(MotorState &motor, uint8_t dirPin, bool &direction,
 
 void processButtons() {
   unsigned long now = millis();
-  
-  // Menu Button
   if(digitalRead(MENU_BUTTON) == LOW) {
     if(!menuBtn.pressed && (now - menuBtn.lastPress > 50)) {
       menuIndex = (menuIndex + 1) % 6;
@@ -159,7 +135,6 @@ void processButtons() {
     menuBtn.pressed = false;
   }
 
-  // Increase Button
   if(digitalRead(INCREASE_BUTTON) == LOW) {
     if(!incBtn.pressed && (now - incBtn.lastPress > 50)) {
       adjustValue(true);
@@ -170,7 +145,6 @@ void processButtons() {
     incBtn.pressed = false;
   }
 
-  // Decrease Button
   if(digitalRead(DECREASE_BUTTON) == LOW) {
     if(!decBtn.pressed && (now - decBtn.lastPress > 50)) {
       adjustValue(false);
@@ -180,7 +154,7 @@ void processButtons() {
   } else {
     decBtn.pressed = false;
   }
-  // Start/Stop DC Motor Button
+
   if (digitalRead(START_STOP_DC_BUTTON) == LOW){
     if (!startStopBtn.pressed && (now - startStopBtn.lastPress > 50)){
       dcRunning = !dcRunning;
@@ -193,27 +167,14 @@ void processButtons() {
   }
 }
 
-
 void adjustValue(bool increase) {
   switch(menuIndex) {
-    case 0: 
-      motorSpeed1 = constrain(motorSpeed1 + (increase ? -100 : 100), 500, 10000);
-      break;
-    case 1: 
-      m1Direction = !m1Direction;
-      break;
-    case 2: 
-      motorSpeed2 = constrain(motorSpeed2 + (increase ? -100 : 100), 500, 10000);
-      break;
-    case 3: 
-      m2Direction = !m2Direction;
-      break;
-    case 4:
-      dcSpeed = constrain(dcSpeed + (increase ? 10 : -10), 0, 255);
-      break;
-    case 5:
-      dcDirection = !dcDirection;
-      break;
+    case 0: motorSpeed1 = constrain(motorSpeed1 + (increase ? -100 : 100), 500, 10000); break;
+    case 1: m1Direction = !m1Direction; break;
+    case 2: motorSpeed2 = constrain(motorSpeed2 + (increase ? -100 : 100), 500, 10000); break;
+    case 3: m2Direction = !m2Direction; break;
+    case 4: dcSpeed = constrain(dcSpeed + (increase ? 10 : -10), 0, 255); break;
+    case 5: dcDirection = !dcDirection; break;
   }
 }
 
@@ -227,65 +188,55 @@ void updateDCMotor(){
   }
 }
 
+void drawTextClear(int x, int y, const char* text, uint16_t fgColor = ST77XX_WHITE, uint16_t bgColor = ST77XX_BLACK) {
+  int16_t x1, y1;
+  uint16_t w, h;
+  tft.getTextBounds(text, x, y, &x1, &y1, &w, &h);
+  tft.fillRect(x1, y1, w, h, bgColor);
+  tft.setCursor(x, y);
+  tft.setTextColor(fgColor);
+  tft.print(text);
+}
+
 void updateDisplay() {
-  // Update menu highlights
   if(menuIndex != lastMenuIndex) {
-   
-    for(int i=0; i<6; i++) {
-      tft.setCursor(5, 5 + (i*20));
+    for(int i = 0; i < 6; i++) {
+      tft.setCursor(5, 10 + (i * 20));
       tft.setTextColor(i == menuIndex ? ST77XX_GREEN : ST77XX_WHITE, ST77XX_BLACK);
       tft.println(menuItems[i]);
     }
     lastMenuIndex = menuIndex;
   }
 
-  // Update changed values
+  char buf[10];
   if(motorSpeed1 != lastSpeed1) {
-    tft.fillRect(120, 28, 100, 15, ST77XX_BLACK);
-    tft.setCursor(120, 28);
-    tft.printf("%d", motorSpeed1);
+    sprintf(buf, "%d", motorSpeed1);
+    drawTextClear(120, 10, buf);
     lastSpeed1 = motorSpeed1;
   }
-
   if(m1Direction != lastM1Dir) {
-    tft.fillRect(120, 38, 50, 15, ST77XX_BLACK);
-    tft.setCursor(120, 38);
-    tft.printf(m1Direction ? "CW" : "CCW");
+    drawTextClear(120, 30, m1Direction ? "CW" : "CCW");
     lastM1Dir = m1Direction;
   }
-
   if(motorSpeed2 != lastSpeed2) {
-    tft.fillRect(120, 58, 100, 15, ST77XX_BLACK);
-    tft.setCursor(120, 58);
-    tft.printf("%d", motorSpeed2);
+    sprintf(buf, "%d", motorSpeed2);
+    drawTextClear(120, 50, buf);
     lastSpeed2 = motorSpeed2;
   }
-
   if(m2Direction != lastM2Dir) {
-    tft.fillRect(120, 78, 50, 15, ST77XX_BLACK);
-    tft.setCursor(120, 78);
-    tft.printf(m2Direction ? "CW" : "CCW");
+    drawTextClear(120, 70, m2Direction ? "CW" : "CCW");
     lastM2Dir = m2Direction;
   }
-
-  if (dcSpeed != lastDCSpeed){
-    tft.fillRect(120, 98, 100, 15, ST77XX_BLACK);
-    tft.setCursor(120, 98);
-    tft.printf("%d", dcSpeed);
+  if(dcSpeed != lastDCSpeed){
+    sprintf(buf, "%d", dcSpeed);
+    drawTextClear(120, 90, buf);
     lastDCSpeed = dcSpeed;
   }
-
   if(dcDirection != lastDCDir){
-    tft.fillRect (120, 118, 50, 15, ST77XX_BLACK);
-    tft.setCursor(120, 118);
-    tft.print(dcDirection ? "CW" : "CCW");
+    drawTextClear(120, 110, dcDirection ? "CW" : "CCW");
     lastDCDir = dcDirection;
   }
-
-
 }
-
-
 
 
 
