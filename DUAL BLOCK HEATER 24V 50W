@@ -122,6 +122,7 @@ void loop() {
 
 // ------------------------------------------------------- DUAL HEATER PID CONTROLLER TWO SET TEMPERATURES----------------------------------------------------
 
+
 #include "max6675.h"
 #include "Fuzzy.h"
 
@@ -142,7 +143,7 @@ MAX6675 thermocouple1(MAX6675_SCK, MAX6675_CS1, MAX6675_SO);
 MAX6675 thermocouple2(MAX6675_SCK, MAX6675_CS2, MAX6675_SO);
 
 // === Setpoints ===
-float set_temperature1 = 250.0; // Heater 1 setpoint
+float set_temperature1 = 240.0; // Heater 1 setpoint
 float set_temperature2 = 230.0; // Heater 2 setpoint
 
 // === PID + Fuzzy for Heater 1 ===
@@ -153,7 +154,7 @@ float lastValidTemp1 = 25.0;
 Fuzzy fuzzy1;
 
 // === PID + Fuzzy for Heater 2 ===
-float kp2 = 15.9, ki2 = 1.54, kd2 = 19.98;
+float kp2 = 15.98, ki2 = 1.4, kd2 = 96.36;
 float e_prev2 = 0, integral2 = 0;
 unsigned long prev_time2 = 0;
 float lastValidTemp2 = 25.0;
